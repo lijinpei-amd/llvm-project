@@ -31,7 +31,7 @@ define i32 @test_01(i32 %a, i32 %b, ptr %p) {
 ; CHECK-NEXT:    br label [[LOOP_BE]]
 ; CHECK:       loop.be:
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i32 [[IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV_NEXT]], 1000
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ult i32 [[IV_NEXT]], 1000
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label [[LOOP_ENTRY]], label [[EXIT:%.*]]
 ; CHECK:       exit:
 ; CHECK-NEXT:    ret i32 999
@@ -99,7 +99,7 @@ define i32 @test_02(i32 %a, i32 %b, ptr %p) {
 ; CHECK-NEXT:    br label [[LOOP_BE]]
 ; CHECK:       loop.be:
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i32 [[IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV_NEXT]], 1000
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ugt i32 1000, [[IV_NEXT]]
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label [[LOOP_ENTRY]], label [[EXIT:%.*]]
 ; CHECK:       exit:
 ; CHECK-NEXT:    ret i32 999
@@ -349,7 +349,7 @@ define void @slt_no_smax_needed(i64 %n, ptr %dst) {
 ; CHECK-NEXT:    [[GEP:%.*]] = getelementptr inbounds i8, ptr [[DST:%.*]], i32 [[IV]]
 ; CHECK-NEXT:    store i8 0, ptr [[GEP]], align 1
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i32 [[IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV_NEXT]], [[SHR]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ult i32 [[IV_NEXT]], [[SHR]]
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label [[LOOP]], label [[EXIT_LOOPEXIT:%.*]]
 ; CHECK:       exit.loopexit:
 ; CHECK-NEXT:    br label [[EXIT]]
@@ -390,7 +390,7 @@ define void @ult_no_umax_needed(i64 %n, ptr %dst) {
 ; CHECK-NEXT:    [[GEP:%.*]] = getelementptr inbounds i8, ptr [[DST:%.*]], i32 [[IV]]
 ; CHECK-NEXT:    store i8 0, ptr [[GEP]], align 1
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i32 [[IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV_NEXT]], [[SHR]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ult i32 [[IV_NEXT]], [[SHR]]
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label [[LOOP]], label [[EXIT_LOOPEXIT:%.*]]
 ; CHECK:       exit.loopexit:
 ; CHECK-NEXT:    br label [[EXIT]]

@@ -212,7 +212,6 @@ define void @lftr_limit_multi_exit(i32 %n) {
 ; CHECK-LABEL: define void @lftr_limit_multi_exit(
 ; CHECK-SAME: i32 [[N:%.*]]) {
 ; CHECK-NEXT:  [[ENTRY:.*]]:
-; CHECK-NEXT:    [[TMP0:%.*]] = add i32 [[N]], 1
 ; CHECK-NEXT:    br label %[[OUTER:.*]]
 ; CHECK:       [[OUTER]]:
 ; CHECK-NEXT:    [[IV1:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[IV1_NEXT:%.*]], %[[OUTER_LATCH:.*]] ]
@@ -223,13 +222,13 @@ define void @lftr_limit_multi_exit(i32 %n) {
 ; CHECK-NEXT:    [[IV2:%.*]] = phi i32 [ 0, %[[OUTER]] ], [ [[IV2_NEXT:%.*]], %[[INNER_LATCH:.*]] ]
 ; CHECK-NEXT:    store volatile i32 [[IV2]], ptr @A, align 4
 ; CHECK-NEXT:    [[IV2_NEXT]] = add nuw nsw i32 [[IV2]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV2]], 20
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ult i32 [[IV2]], 20
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label %[[INNER_LATCH]], label %[[EXIT_LOOPEXIT:.*]]
 ; CHECK:       [[INNER_LATCH]]:
-; CHECK-NEXT:    [[EXITCOND2:%.*]] = icmp ne i32 [[IV2_NEXT]], [[TMP0]]
+; CHECK-NEXT:    [[EXITCOND2:%.*]] = icmp ult i32 [[IV2]], [[N]]
 ; CHECK-NEXT:    br i1 [[EXITCOND2]], label %[[INNER_HEADER]], label %[[OUTER_LATCH]]
 ; CHECK:       [[OUTER_LATCH]]:
-; CHECK-NEXT:    [[EXITCOND3:%.*]] = icmp ne i32 [[IV1_NEXT]], 21
+; CHECK-NEXT:    [[EXITCOND3:%.*]] = icmp samesign ult i32 [[IV1]], 20
 ; CHECK-NEXT:    br i1 [[EXITCOND3]], label %[[OUTER]], label %[[EXIT_LOOPEXIT1:.*]]
 ; CHECK:       [[EXIT_LOOPEXIT]]:
 ; CHECK-NEXT:    br label %[[EXIT:.*]]

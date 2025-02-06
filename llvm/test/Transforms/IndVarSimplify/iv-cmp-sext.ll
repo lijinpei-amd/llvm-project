@@ -11,7 +11,7 @@ define void @foo(ptr %x, i32 %n) {
 ; CHECK-NEXT:    [[CMP10:%.*]] = icmp sgt i32 [[N]], 0
 ; CHECK-NEXT:    br i1 [[CMP10]], label %[[FOR_BODY_PREHEADER:.*]], label %[[FOR_COND_CLEANUP:.*]]
 ; CHECK:       [[FOR_BODY_PREHEADER]]:
-; CHECK-NEXT:    [[WIDE_TRIP_COUNT:%.*]] = zext i32 [[N]] to i64
+; CHECK-NEXT:    [[TMP2:%.*]] = sext i32 [[N]] to i64
 ; CHECK-NEXT:    br label %[[FOR_BODY:.*]]
 ; CHECK:       [[FOR_COND_CLEANUP_LOOPEXIT:.*]]:
 ; CHECK-NEXT:    br label %[[FOR_COND_CLEANUP]]
@@ -30,7 +30,7 @@ define void @foo(ptr %x, i32 %n) {
 ; CHECK-NEXT:    br label %[[FOR_INC]]
 ; CHECK:       [[FOR_INC]]:
 ; CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add nuw nsw i64 [[INDVARS_IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i64 [[INDVARS_IV_NEXT]], [[WIDE_TRIP_COUNT]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp slt i64 [[INDVARS_IV_NEXT]], [[TMP2]]
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label %[[FOR_BODY]], label %[[FOR_COND_CLEANUP_LOOPEXIT]]
 ;
 entry:

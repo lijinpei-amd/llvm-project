@@ -27,7 +27,7 @@ define void @pred_mip_12(ptr %dst, ptr %src, i32 %n, i64 %offset) {
 ; CHECK-NEXT:    [[L:%.*]] = load i8, ptr [[OUTER_PTR]], align 1
 ; CHECK-NEXT:    store i8 [[L]], ptr [[DST]], align 2
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i32 [[IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV_NEXT]], [[SMAX]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp slt i32 [[IV_NEXT]], [[N]]
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label %[[INNER_LOOP]], label %[[OUTER_LOOP_LOOPEXIT]]
 ; CHECK:       [[EXIT]]:
 ; CHECK-NEXT:    ret void

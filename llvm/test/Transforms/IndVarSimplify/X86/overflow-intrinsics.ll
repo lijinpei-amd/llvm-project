@@ -21,7 +21,7 @@ define void @f_sadd(ptr %a) {
 ; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize [[META0]]
 ; CHECK-NEXT:    unreachable, !nosanitize [[META0]]
 ; CHECK:       [[CONT]]:
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i64 [[INDVARS_IV_NEXT]], 16
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ult i64 [[INDVARS_IV_NEXT]], 16
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label %[[FOR_BODY]], label %[[FOR_COND_CLEANUP]]
 ;
 entry:
@@ -110,7 +110,7 @@ define void @f_uadd(ptr %a) {
 ; CHECK-NEXT:    tail call void @llvm.trap(), !nosanitize [[META0]]
 ; CHECK-NEXT:    unreachable, !nosanitize [[META0]]
 ; CHECK:       [[CONT]]:
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i64 [[INDVARS_IV_NEXT]], 16
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ult i64 [[INDVARS_IV_NEXT]], 16
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label %[[FOR_BODY]], label %[[FOR_COND_CLEANUP]]
 ;
 entry:

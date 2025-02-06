@@ -24,7 +24,7 @@ define void @test() {
 ; CHECK-NEXT:    ret void
 ; CHECK:       bb12:
 ; CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add nuw nsw i64 [[INDVARS_IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i64 [[INDVARS_IV_NEXT]], [[TMP1:%.*]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ult i64 [[INDVARS_IV_NEXT]], [[TMP1:%.*]]
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label [[BB3:%.*]], label [[BB17:%.*]]
 ; CHECK:       bb17:
 ; CHECK-NEXT:    unreachable

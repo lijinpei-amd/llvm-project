@@ -11,21 +11,20 @@ define void @hoge(i64 %x, i64 %idx.start, ptr %ptr) {
 ; CHECK-LABEL: @hoge(
 ; CHECK-NEXT:  entry:
 ; CHECK-NEXT:    [[N:%.*]] = sdiv exact i64 [[X:%.*]], 40
-; CHECK-NEXT:    [[TMP0:%.*]] = add i64 [[IDX_START:%.*]], 1
-; CHECK-NEXT:    [[TMP1:%.*]] = sub i64 [[TMP0]], [[N]]
 ; CHECK-NEXT:    br label [[HEADER:%.*]]
 ; CHECK:       header:
-; CHECK-NEXT:    [[INDVARS_IV:%.*]] = phi i64 [ [[INDVARS_IV_NEXT:%.*]], [[LATCH:%.*]] ], [ [[TMP1]], [[ENTRY:%.*]] ]
-; CHECK-NEXT:    [[IDX:%.*]] = phi i64 [ [[IDX_NEXT:%.*]], [[LATCH]] ], [ [[IDX_START]], [[ENTRY]] ]
+; CHECK-NEXT:    [[IDX:%.*]] = phi i64 [ [[IDX_NEXT:%.*]], [[LATCH:%.*]] ], [ [[IDX_START:%.*]], [[ENTRY:%.*]] ]
 ; CHECK-NEXT:    [[COND:%.*]] = icmp sgt i64 [[N]], [[IDX]]
 ; CHECK-NEXT:    br i1 [[COND]], label [[END:%.*]], label [[INNER_PREHEADER:%.*]]
 ; CHECK:       inner.preheader:
 ; CHECK-NEXT:    br label [[INNER:%.*]]
 ; CHECK:       inner:
 ; CHECK-NEXT:    [[I:%.*]] = phi i64 [ [[I_NEXT:%.*]], [[INNER]] ], [ 0, [[INNER_PREHEADER]] ]
-; CHECK-NEXT:    [[I_NEXT]] = add nuw i64 [[I]], 1
+; CHECK-NEXT:    [[J:%.*]] = phi i64 [ [[J_NEXT:%.*]], [[INNER]] ], [ [[N]], [[INNER_PREHEADER]] ]
+; CHECK-NEXT:    [[I_NEXT]] = add nuw nsw i64 [[I]], 1
+; CHECK-NEXT:    [[J_NEXT]] = add nsw i64 [[J]], 1
 ; CHECK-NEXT:    store i64 0, ptr [[PTR:%.*]], align 8
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i64 [[I_NEXT]], [[INDVARS_IV]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp slt i64 [[J]], [[IDX]]
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label [[INNER]], label [[INNER_EXIT:%.*]]
 ; CHECK:       inner_exit:
 ; CHECK-NEXT:    [[INDVAR:%.*]] = phi i64 [ [[I_NEXT]], [[INNER]] ]
@@ -33,7 +32,6 @@ define void @hoge(i64 %x, i64 %idx.start, ptr %ptr) {
 ; CHECK-NEXT:    br label [[LATCH]]
 ; CHECK:       latch:
 ; CHECK-NEXT:    [[IDX_NEXT]] = add nsw i64 [[IDX]], -1
-; CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add i64 [[INDVARS_IV]], -1
 ; CHECK-NEXT:    br label [[HEADER]]
 ; CHECK:       end:
 ; CHECK-NEXT:    ret void
@@ -81,7 +79,7 @@ define i64 @narow_canonical_iv_wide_multiplied_iv(i32 %x, i64 %y, ptr %0) {
 ; CHECK-NEXT:    [[IV:%.*]] = phi i32 [ 0, [[ENTRY:%.*]] ], [ [[IV_NEXT:%.*]], [[LOOP]] ]
 ; CHECK-NEXT:    call void @foo()
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw nsw i32 [[IV]], 1
-; CHECK-NEXT:    [[EC:%.*]] = icmp ne i32 [[IV_NEXT]], [[SMAX]]
+; CHECK-NEXT:    [[EC:%.*]] = icmp samesign ult i32 [[IV_NEXT]], [[SMAX]]
 ; CHECK-NEXT:    br i1 [[EC]], label [[LOOP]], label [[EXIT:%.*]]
 ; CHECK:       exit:
 ; CHECK-NEXT:    [[TMP1:%.*]] = zext nneg i32 [[SMAX]] to i64

@@ -129,12 +129,11 @@ define void @slt_non_constant_rhs_no_mustprogress(i16 %n.raw) {
 ; CHECK-LABEL: @slt_non_constant_rhs_no_mustprogress(
 ; CHECK-NEXT:  entry:
 ; CHECK-NEXT:    [[N:%.*]] = and i16 [[N_RAW:%.*]], 255
-; CHECK-NEXT:    [[SMAX:%.*]] = call i16 @llvm.smax.i16(i16 [[N]], i16 1)
 ; CHECK-NEXT:    br label [[FOR_BODY:%.*]]
 ; CHECK:       for.body:
 ; CHECK-NEXT:    [[INDVARS_IV:%.*]] = phi i16 [ [[INDVARS_IV_NEXT:%.*]], [[FOR_BODY]] ], [ 0, [[ENTRY:%.*]] ]
 ; CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add nuw nsw i16 [[INDVARS_IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i16 [[INDVARS_IV_NEXT]], [[SMAX]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ult i16 [[INDVARS_IV_NEXT]], [[N]]
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label [[FOR_BODY]], label [[FOR_END:%.*]]
 ; CHECK:       for.end:
 ; CHECK-NEXT:    ret void
@@ -935,12 +934,12 @@ define i16 @ult_multiuse_profit(i16 %n.raw, i8 %start) mustprogress {
 ; CHECK-NEXT:    [[TMP0:%.*]] = trunc i16 254 to i8
 ; CHECK-NEXT:    br label [[FOR_BODY:%.*]]
 ; CHECK:       for.body:
-; CHECK-NEXT:    [[IV:%.*]] = phi i8 [ [[IV_NEXT:%.*]], [[FOR_BODY]] ], [ [[START]], [[ENTRY:%.*]] ]
+; CHECK-NEXT:    [[IV:%.*]] = phi i8 [ [[IV_NEXT:%.*]], [[FOR_BODY]] ], [ [[START:%.*]], [[ENTRY:%.*]] ]
 ; CHECK-NEXT:    [[IV_NEXT]] = add i8 [[IV]], 1
 ; CHECK-NEXT:    [[CMP:%.*]] = icmp ult i8 [[IV_NEXT]], [[TMP0]]
 ; CHECK-NEXT:    br i1 [[CMP]], label [[FOR_BODY]], label [[FOR_END:%.*]]
 ; CHECK:       for.end:
-; CHECK-NEXT:    [[TMP1:%.*]] = add i8 [[START:%.*]], 1
+; CHECK-NEXT:    [[TMP1:%.*]] = add i8 [[START]], 1
 ; CHECK-NEXT:    [[TMP2:%.*]] = zext i8 [[TMP1]] to i16
 ; CHECK-NEXT:    [[UMAX:%.*]] = call i16 @llvm.umax.i16(i16 [[TMP2]], i16 254)
 ; CHECK-NEXT:    ret i16 [[UMAX]]
@@ -994,12 +993,11 @@ define void @slt_restricted_rhs(i16 %n.raw) mustprogress {
 ; CHECK-LABEL: @slt_restricted_rhs(
 ; CHECK-NEXT:  entry:
 ; CHECK-NEXT:    [[N:%.*]] = and i16 [[N_RAW:%.*]], 255
-; CHECK-NEXT:    [[SMAX:%.*]] = call i16 @llvm.smax.i16(i16 [[N]], i16 1)
 ; CHECK-NEXT:    br label [[FOR_BODY:%.*]]
 ; CHECK:       for.body:
 ; CHECK-NEXT:    [[INDVARS_IV:%.*]] = phi i16 [ [[INDVARS_IV_NEXT:%.*]], [[FOR_BODY]] ], [ 0, [[ENTRY:%.*]] ]
 ; CHECK-NEXT:    [[INDVARS_IV_NEXT]] = add nuw nsw i16 [[INDVARS_IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i16 [[INDVARS_IV_NEXT]], [[SMAX]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp samesign ult i16 [[INDVARS_IV_NEXT]], [[N]]
 ; CHECK-NEXT:    br i1 [[EXITCOND]], label [[FOR_BODY]], label [[FOR_END:%.*]]
 ; CHECK:       for.end:
 ; CHECK-NEXT:    ret void

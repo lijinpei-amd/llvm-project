@@ -118,7 +118,7 @@ define void @test_sub_cmp(ptr align 8 %start, ptr %end) {
 ; N32-NEXT:    br i1 [[C_1]], label %[[EXIT_EARLY:.*]], label %[[LOOP_LATCH]]
 ; N32:       [[LOOP_LATCH]]:
 ; N32-NEXT:    [[IV_NEXT]] = add nuw i64 [[IV]], 1
-; N32-NEXT:    [[EXITCOND:%.*]] = icmp ne i64 [[IV_NEXT]], [[PTR_DIFF]]
+; N32-NEXT:    [[EXITCOND:%.*]] = icmp ult i64 [[IV_NEXT]], [[PTR_DIFF]]
 ; N32-NEXT:    br i1 [[EXITCOND]], label %[[LOOP_HEADER]], label %[[EXIT_LOOPEXIT:.*]]
 ; N32:       [[EXIT_EARLY]]:
 ; N32-NEXT:    br label %[[EXIT]]
