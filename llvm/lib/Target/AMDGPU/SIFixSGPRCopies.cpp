@@ -818,6 +818,7 @@ bool SIFixSGPRCopies::run(MachineFunction &MF) {
 }
 
 void SIFixSGPRCopies::processPHINode(MachineInstr &MI) {
+  return;
   bool AllAGPRUses = true;
   SetVector<const MachineInstr *> worklist;
   SmallPtrSet<const MachineInstr *, 4> Visited;

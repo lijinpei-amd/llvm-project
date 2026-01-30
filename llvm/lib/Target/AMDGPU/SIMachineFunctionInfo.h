@@ -1212,7 +1212,13 @@ public:
   /// Return true if an MFMA that requires at least \p NumRegs should select to
   /// the AGPR form, instead of the VGPR form.
   bool selectAGPRFormMFMA(unsigned NumRegs) const {
-    return !MFMAVGPRForm && getMinNumAGPRs() >= NumRegs;
+    auto res = !MFMAVGPRForm && getMinNumAGPRs() >= NumRegs;
+    // This is what amdgpu-agpr-alloc affects.
+    // llvm::errs() << "selectAGPRFormMFMA: " << res << "\n";
+    // llvm::errs() << "MFMAVGPRForm: " << MFMAVGPRForm << "\n";
+    // llvm::errs() << "getMinNumAGPRs: " << getMinNumAGPRs() << "\n";
+    // llvm::errs() << "NumRegs: " << NumRegs << "\n";
+    return res;
   }
 
   // \returns true if a function has a use of AGPRs via inline asm or

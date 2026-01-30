@@ -2190,6 +2190,19 @@ void BaseMemOpClusterMutation::collectMemOpRecords(
       continue;
 
     const MachineInstr &MI = *SU.getInstr();
+    // Don't cluster ds_read
+    bool has_as3 = false;
+    bool has_none_as3 = false;
+    for (auto mo: MI.memoperands()) {
+      if (mo->getAddrSpace() == 3) {
+        has_as3 = true;
+      } else {
+        has_none_as3 = true;
+      }
+    }
+    if (has_as3 && !has_none_as3) {
+      continue;
+    }
     SmallVector<const MachineOperand *, 4> BaseOps;
     int64_t Offset;
     bool OffsetIsScalable;
@@ -3321,18 +3334,20 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
                                          OtherCount, RemLatency, false);
   }
 
-  // Schedule aggressively for latency in PostRA mode. We don't check for
-  // acyclic latency during PostRA, and highly out-of-order processors will
-  // skip PostRA scheduling.
-  if (!OtherResLimited &&
-      (IsPostRA || shouldReduceLatency(Policy, CurrZone, !RemLatencyComputed,
-                                       RemLatency))) {
-    Policy.ReduceLatency |= true;
-    LLVM_DEBUG(dbgs() << "  " << CurrZone.Available.getName()
-                      << " RemainingLatency " << RemLatency << " + "
-                      << CurrZone.getCurrCycle() << "c > CritPath "
-                      << Rem.CriticalPath << "\n");
-  }
+  (void)RemLatencyComputed;
+  // Don't schedule for latency post-ra, resource pressure is more important for us.
+  // // Schedule aggressively for latency in PostRA mode. We don't check for
+  // // acyclic latency during PostRA, and highly out-of-order processors will
+  // // skip PostRA scheduling.
+  // if (!OtherResLimited &&
+  //     (IsPostRA || shouldReduceLatency(Policy, CurrZone, !RemLatencyComputed,
+  //                                      RemLatency))) {
+  //   Policy.ReduceLatency |= true;
+  //   LLVM_DEBUG(dbgs() << "  " << CurrZone.Available.getName()
+  //                     << " RemainingLatency " << RemLatency << " + "
+  //                     << CurrZone.getCurrCycle() << "c > CritPath "
+  //                     << Rem.CriticalPath << "\n");
+  // }
   // If the same resource is limiting inside and outside the zone, do nothing.
   if (CurrZone.getZoneCritResIdx() == OtherCritIdx)
     return;

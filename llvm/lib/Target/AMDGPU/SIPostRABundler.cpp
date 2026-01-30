@@ -116,7 +116,21 @@ void SIPostRABundler::collectUsedRegUnits(const MachineInstr &MI,
 
 bool SIPostRABundler::isBundleCandidate(const MachineInstr &MI) const {
   const uint64_t IMemFlags = MI.getDesc().TSFlags & MemFlags;
-  return IMemFlags != 0 && MI.mayLoadOrStore() && !MI.isBundled();
+  auto res0 = IMemFlags != 0 && MI.mayLoadOrStore() && !MI.isBundled();
+  if (!res0) {
+    return false;
+  }
+  // Don't bundle ds_read, otherwise we won't be able to schedule them apart.
+  bool has_as3 = false;
+  bool has_none_as3 = false;
+  for (auto mo: MI.memoperands()) {
+    if (mo->getAddrSpace() == 3) {
+      has_as3 = true;
+    } else {
+      has_none_as3 = true;
+    }
+  }
+  return !has_as3 || has_none_as3;
 }
 
 bool SIPostRABundler::canBundle(const MachineInstr &MI,

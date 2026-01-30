@@ -499,6 +499,11 @@ public:
                 ? 2.0
                 : 1.0);
   }
+
+  bool shouldCoalesce(
+    MachineInstr *MI, const TargetRegisterClass *SrcRC, unsigned SubReg,
+    const TargetRegisterClass *DstRC, unsigned DstSubReg,
+    const TargetRegisterClass *NewRC, LiveIntervals &LIS) const override;
 };
 
 namespace AMDGPU {

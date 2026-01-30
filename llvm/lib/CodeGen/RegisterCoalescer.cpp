@@ -63,7 +63,7 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "regalloc"
+#define DEBUG_TYPE "regalloc-coalesce"
 
 STATISTIC(numJoins, "Number of interval joins performed");
 STATISTIC(numCrossRCs, "Number of cross class joins performed");
