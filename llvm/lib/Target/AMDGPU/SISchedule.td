@@ -22,6 +22,7 @@ def WriteLDS    : SchedWrite;
 def WriteSALU   : SchedWrite;
 def WriteSMEM   : SchedWrite;
 def WriteVMEM   : SchedWrite;
+def WriteBuffer_LJP: SchedWrite;
 def WriteBarrier : SchedWrite;
 
 def MIVGPRRead  : SchedRead;
@@ -127,6 +128,9 @@ def HWSALU   : ProcResource<1> {
 def HWVMEM   : ProcResource<1> {
   let BufferSize = 1;
 }
+def HW_BUFFER_LJP   : ProcResource<1> {
+  let BufferSize = 0;
+}
 def HWVALU   : ProcResource<1> {
   let BufferSize = 1;
 }
@@ -173,6 +177,9 @@ multiclass SICommonWriteRes {
   def : HWWriteRes<WriteSALU,    [HWSALU],   1>;
   def : HWWriteRes<WriteSMEM,    [HWLGKM],   5>;
   def : HWWriteRes<WriteVMEM,    [HWVMEM],   80>;
+  let ReleaseAtCycles = [8] in {
+        def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+  }
   def : HWWriteRes<WriteBarrier, [HWBranch], 500>; // XXX: Guessed ???
 
   def : HWVALUWriteRes<Write32Bit,         1>;
@@ -398,6 +405,9 @@ def : HWWriteRes<WriteLDS,           [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteSALU,          [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSMEM,          [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,          [HWVMEM,   HWRC], 320>;
+let ReleaseAtCycles = [8] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+}
 def : HWWriteRes<WriteBarrier,       [HWBranch],       2000>;
 
 def : UnsupportedWriteRes<WriteSFPU>;
@@ -432,6 +442,9 @@ def : HWWriteRes<WriteSALU,          [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSFPU,          [HWSALU,   HWRC], 4>;
 def : HWWriteRes<WriteSMEM,          [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,          [HWVMEM,   HWRC], 320>;
+let ReleaseAtCycles = [8] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+}
 def : HWWriteRes<WriteBarrier,       [HWBranch],       2000>;
 } // End RetireOOO = 1
 
@@ -463,6 +476,9 @@ def : HWWriteRes<WriteSALU,              [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSFPU,              [HWSALU,   HWRC], 4>;
 def : HWWriteRes<WriteSMEM,              [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,              [HWVMEM,   HWRC], 320>;
+let ReleaseAtCycles = [8] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+}
 def : HWWriteRes<WriteBarrier,           [HWBranch],       2000>;
 
 def : InstRW<[WriteCopy], (instrs COPY)>;
@@ -508,6 +524,9 @@ def : HWWriteRes<WriteSALU,              [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSFPU,              [HWSALU,   HWRC], 4>;
 def : HWWriteRes<WriteSMEM,              [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,              [HWVMEM,   HWRC], 320>;
+let ReleaseAtCycles = [8] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+}
 def : HWWriteRes<WriteBarrier,           [HWBranch],       2000>;
 
 def : InstRW<[WriteCopy], (instrs COPY)>;

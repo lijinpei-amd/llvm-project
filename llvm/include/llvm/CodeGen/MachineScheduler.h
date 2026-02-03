@@ -1108,6 +1108,7 @@ public:
     TopDepthReduce,
     TopPathReduce,
     NodeOrder,
+    CriticalRes,
     FirstValid
   };
 
@@ -1120,13 +1121,15 @@ public:
     bool ReduceLatency = false;
     unsigned ReduceResIdx = 0;
     unsigned DemandResIdx = 0;
+    unsigned CriticalResIdx = 0;
 
     CandPolicy() = default;
 
     bool operator==(const CandPolicy &RHS) const {
       return ReduceLatency == RHS.ReduceLatency &&
              ReduceResIdx == RHS.ReduceResIdx &&
-             DemandResIdx == RHS.DemandResIdx;
+             DemandResIdx == RHS.DemandResIdx &&
+             CriticalResIdx == RHS.CriticalResIdx;
     }
     bool operator!=(const CandPolicy &RHS) const {
       return !(*this == RHS);

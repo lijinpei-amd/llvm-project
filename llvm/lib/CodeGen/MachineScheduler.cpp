@@ -127,6 +127,8 @@ STATISTIC(
     "Number of scheduling units chosen for BotPathReduce heuristic pre-RA");
 STATISTIC(NumNodeOrderPreRA,
           "Number of scheduling units chosen for NodeOrder heuristic pre-RA");
+STATISTIC(NumCriticalResourcePreRA,
+          "Number of scheduling units chosen for CriticalRes heuristic pre-RA");
 STATISTIC(NumFirstValidPreRA,
           "Number of scheduling units chosen for FirstValid heuristic pre-RA");
 
@@ -172,7 +174,9 @@ STATISTIC(
     NumBotPathReducePostRA,
     "Number of scheduling units chosen for BotPathReduce heuristic post-RA");
 STATISTIC(NumNodeOrderPostRA,
-          "Number of scheduling units chosen for NodeOrder heuristic post-RA");
+	"Number of scheduling units chosen for NodeOrder heuristic post-RA");
+STATISTIC(NumCriticalResourcePostRA,
+          "Number of scheduling units chosen for CriticalRes heuristic post-RA");
 STATISTIC(NumFirstValidPostRA,
           "Number of scheduling units chosen for FirstValid heuristic post-RA");
 
@@ -865,13 +869,13 @@ void MachineSchedulerBase::scheduleRegions(ScheduleDAGInstrs &Scheduler,
         Scheduler.exitRegion();
         continue;
       }
-      LLVM_DEBUG(dbgs() << "********** MI Scheduling **********\n");
-      LLVM_DEBUG(dbgs() << MF->getName() << ":" << printMBBReference(*MBB)
+      dbgs() << "********** MI Scheduling **********\n";
+      dbgs() << MF->getName() << ":" << printMBBReference(*MBB)
                         << " " << MBB->getName() << "\n  From: " << *I
                         << "    To: ";
                  if (RegionEnd != MBB->end()) dbgs() << *RegionEnd;
                  else dbgs() << "End\n";
-                 dbgs() << " RegionInstrs: " << NumRegionInstrs << '\n');
+                 dbgs() << " RegionInstrs: " << NumRegionInstrs << '\n';
       if (DumpCriticalPathLength) {
         errs() << MF->getName();
         errs() << ":%bb. " << MBB->getNumber();
@@ -2499,6 +2503,15 @@ static bool checkResourceLimit(unsigned LFactor, unsigned Count,
     return ResCntFactor > (int)LFactor;
 }
 
+static unsigned getExcessCriticalResource(unsigned LFactor, unsigned Count,
+                               unsigned Latency) {
+			       if (Count > Latency * LFactor) {
+			       	return Count  - Latency * LFactor;
+			       } else {
+			       return 0;
+			       }
+}
+
 void SchedBoundary::reset() {
   // A new HazardRec is created for each DAG and owned by SchedBoundary.
   // Destroying and reconstructing it is very expensive though. So keep
@@ -3164,6 +3177,10 @@ SUnit *SchedBoundary::pickOnlyChoice() {
   // Defer any ready instrs that now have a hazard.
   for (ReadyQueue::iterator I = Available.begin(); I != Available.end();) {
     if (checkHazard(*I)) {
+  LLVM_DEBUG({
+  auto* SU = *I;
+  dbgs() << "Returning to pending SU(" << SU->NodeNum << ") "
+                    << *SU->getInstr();});
       Pending.push(*I);
       I = Available.remove(I);
       continue;
@@ -3334,6 +3351,35 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
                                          OtherCount, RemLatency, false);
   }
 
+  unsigned CriticalRes = 0;
+  unsigned CriticalResCount = 0;
+  if (SchedModel->hasInstrSchedModel()) {
+    	RemLatency = computeRemLatency(CurrZone);
+    	RemLatencyComputed = true;
+  	auto LatencyFactor = SchedModel->getLatencyFactor();
+  	for (unsigned I = 0, E = SchedModel->getNumProcResourceKinds(); I < E; ++I) {
+		auto RemCount = Rem.RemainingCounts[I];
+		auto ResFactor = SchedModel->getResourceFactor(I);
+		auto NewResCount = getExcessCriticalResource(LatencyFactor, RemCount, RemLatency);
+		if (NewResCount) {
+			llvm::errs() << "CurrCycle: " << CurrZone.getCurrCycle() << " found critical resource: " << SchedModel->getProcResource(I)->Name << "\n";
+			llvm::errs() << "latency: " << RemLatency << " RemCount: " << RemCount << " LatencyFactor: " << LatencyFactor << " ResFactor: " << ResFactor << "\n"; 
+		}
+		if (NewResCount > CriticalResCount) {
+			CriticalResCount = NewResCount;
+			CriticalRes = I;
+		}
+	}
+	if (CriticalRes) {
+	llvm::errs() << "final critical resource\n";
+		auto RemCount = Rem.RemainingCounts[CriticalRes];
+		auto ResFactor = SchedModel->getResourceFactor(CriticalRes);
+			llvm::errs() << "CurrCycle: " << CurrZone.getCurrCycle() << " found critical resource: " << SchedModel->getProcResource(CriticalRes)->Name << "\n";
+			llvm::errs() << "latency: " << RemLatency << " RemCount: " << RemCount << " LatencyFactor: " << LatencyFactor << " ResFactor: " << ResFactor << "\n"; 
+		Policy.CriticalResIdx = CriticalRes;
+	}
+  }
+
   (void)RemLatencyComputed;
   // Don't schedule for latency post-ra, resource pressure is more important for us.
   // // Schedule aggressively for latency in PostRA mode. We don't check for
@@ -3389,6 +3435,7 @@ const char *GenericSchedulerBase::getReasonStr(
   case BotHeightReduce:return "BOT-HEIGHT";
   case BotPathReduce:  return "BOT-PATH  ";
   case NodeOrder:      return "ORDER     ";
+  case CriticalRes:      return "CRITICAL-RESOURCE";
   case FirstValid:     return "FIRST     ";
   };
   // clang-format on
@@ -3577,6 +3624,9 @@ static void tracePick(GenericSchedulerBase::CandReason Reason, bool IsTop,
     case GenericScheduler::NodeOrder:
       NumNodeOrderPostRA++;
       return;
+    case GenericScheduler::CriticalRes:
+      NumCriticalResourcePostRA++;
+      return;
     case GenericScheduler::FirstValid:
       NumFirstValidPostRA++;
       return;
@@ -3635,6 +3685,9 @@ static void tracePick(GenericSchedulerBase::CandReason Reason, bool IsTop,
       return;
     case GenericScheduler::NodeOrder:
       NumNodeOrderPreRA++;
+      return;
+    case GenericScheduler::CriticalRes:
+      NumCriticalResourcePreRA++;
       return;
     case GenericScheduler::FirstValid:
       NumFirstValidPreRA++;
@@ -4361,6 +4414,25 @@ void PostGenericScheduler::registerRoots() {
   }
 }
 
+static unsigned getResourceUseCount(bool HasReservedResource, unsigned ResId, const MCSchedClassDesc * SC, const TargetSchedModel* SchedModel) {
+  if (!HasReservedResource) {
+    return 0;
+  }
+  if (!SC) {
+  return 0;
+  }
+  unsigned Count = 0;
+    for (TargetSchedModel::ProcResIter PI = SchedModel->getWriteProcResBegin(SC),
+                                       PE = SchedModel->getWriteProcResEnd(SC);
+         PI != PE; ++PI) {
+	 if (PI->ProcResourceIdx != ResId) {
+	 continue;
+	 }
+	 Count += PI->ReleaseAtCycle - PI->AcquireAtCycle;
+	 }
+	 return Count;
+}
+
 /// Apply a set of heuristics to a new candidate for PostRA scheduling.
 ///
 /// \param Cand provides the policy and current best candidate.
@@ -4378,6 +4450,16 @@ bool PostGenericScheduler::tryCandidate(SchedCandidate &Cand,
   if (tryLess(Top.getLatencyStallCycles(TryCand.SU),
               Top.getLatencyStallCycles(Cand.SU), TryCand, Cand, Stall))
     return TryCand.Reason != NoCand;
+
+  if (SchedModel && SchedModel->hasInstrSchedModel()) {
+	  auto CriticalResIdx = Cand.Policy.CriticalResIdx;
+	  if (CriticalResIdx) {
+		  // Prioritize instructions that use critical resource
+		  if (tryGreater(getResourceUseCount(TryCand.SU->hasReservedResource, CriticalResIdx, DAG->getSchedClass(TryCand.SU), SchedModel),
+			      getResourceUseCount(Cand.SU->hasReservedResource, CriticalResIdx, DAG->getSchedClass(Cand.SU), SchedModel), TryCand, Cand, CriticalRes))
+		    return TryCand.Reason != NoCand;
+	  }
+  }
 
   // Keep clustered nodes together.
   unsigned CandZoneCluster = Cand.AtTop ? TopClusterID : BotClusterID;

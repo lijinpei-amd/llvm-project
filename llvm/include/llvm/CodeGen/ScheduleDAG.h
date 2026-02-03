@@ -411,7 +411,7 @@ class TargetRegisterInfo;
     bool addPredBarrier(SUnit *SU) {
       SDep Dep(SU, SDep::Barrier);
       unsigned TrueMemOrderLatency =
-        ((SU->getInstr()->mayStore() && this->getInstr()->mayLoad()) ? 1 : 0);
+        ((SU->getInstr()->mayStore() && this->getInstr()->mayLoad()) ? 1 : 16);
       Dep.setLatency(TrueMemOrderLatency);
       return addPred(Dep);
     }

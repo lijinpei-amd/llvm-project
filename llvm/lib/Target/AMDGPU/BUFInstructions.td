@@ -70,7 +70,7 @@ class BUF_Pseudo <string opName, dag outs, dag ins,
 
   let Uses = [EXEC];
   let hasSideEffects = 0;
-  let SchedRW = [WriteVMEM];
+  let SchedRW = [WriteVMEM, WriteBuffer_LJP];
 
 
 
