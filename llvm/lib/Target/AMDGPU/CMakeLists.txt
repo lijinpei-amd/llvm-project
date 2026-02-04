@@ -83,6 +83,7 @@ add_llvm_target(AMDGPUCodeGen
   AMDGPULowerModuleLDSPass.cpp
   AMDGPUPrepareAGPRAlloc.cpp
   AMDGPULowerExecSync.cpp
+  AMDGPUSWaitCntLatency.cpp
   AMDGPUSwLowerLDS.cpp
   AMDGPUMachineFunction.cpp
   AMDGPUMachineModuleInfo.cpp

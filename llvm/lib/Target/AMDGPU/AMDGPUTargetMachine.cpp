@@ -17,6 +17,7 @@
 #include "AMDGPUTargetMachine.h"
 #include "AMDGPU.h"
 #include "AMDGPUAliasAnalysis.h"
+#include "AMDGPUSWaitCntLatency.h"
 #include "AMDGPUBarrierLatency.h"
 #include "AMDGPUCtorDtorLowering.h"
 #include "AMDGPUExportClustering.h"
@@ -1210,6 +1211,7 @@ GCNTargetMachine::createPostMachineScheduler(MachineSchedContext *C) const {
     DAG->addMutation(createVOPDPairingMutation());
   DAG->addMutation(createAMDGPUExportClusteringDAGMutation());
   DAG->addMutation(createAMDGPUBarrierLatencyDAGMutation(C->MF));
+  // DAG->addMutation(createAMDGPUSWaitCntLatencyDAGMutation());
   return DAG;
 }
 //===----------------------------------------------------------------------===//

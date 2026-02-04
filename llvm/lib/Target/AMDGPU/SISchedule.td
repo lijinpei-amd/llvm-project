@@ -119,7 +119,7 @@ def HWExport : ProcResource<1> {
 def HWLGKM   : ProcResource<1> {
   let BufferSize = 1;
 }
-def HW_LJP_LDS   : ProcResource<2> {
+def HW_LJP_LDS   : ProcResource<1> {
   let BufferSize = 0;
 }
 def HWSALU   : ProcResource<1> {
@@ -171,14 +171,14 @@ multiclass SICommonWriteRes {
   let RetireOOO = 1 in { // llvm-mca specific flag
   def : HWWriteRes<WriteBranch,  [HWBranch], 8>;
   def : HWWriteRes<WriteExport,  [HWExport], 4>;
-  let ReleaseAtCycles = [1, 4] in {
-    def : HWWriteRes<WriteLDS,     [HWLGKM, HW_LJP_LDS],   5>; // Can be between 2 and 64
+  let ReleaseAtCycles = [1, 8] in {
+    def : HWWriteRes<WriteLDS,     [HWLGKM, HW_LJP_LDS],   8>; // Can be between 2 and 64
   }
   def : HWWriteRes<WriteSALU,    [HWSALU],   1>;
   def : HWWriteRes<WriteSMEM,    [HWLGKM],   5>;
   def : HWWriteRes<WriteVMEM,    [HWVMEM],   80>;
-  let ReleaseAtCycles = [8] in {
-        def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+  let ReleaseAtCycles = [16, 16] in {
+        def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
   }
   def : HWWriteRes<WriteBarrier, [HWBranch], 500>; // XXX: Guessed ???
 
@@ -368,7 +368,7 @@ def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_SMFMAC_.32_32X32X")>;
 // If either matrix format is f8, the instruction takes 2x as many
 // cycles. TODO: This isn't reflected in MCA.
 def WriteMFMAScale_16X16X128_F8F6F4 : SchedWriteVariant<[
-    SchedVar<PredIsF8_MFMA_SCALE, [Write4PassMAI]>,
+    SchedVar<PredIsF8_MFMA_SCALE, [Write8PassMAI]>,
     SchedVar<NoSchedPred, [Write4PassMAI]>]>;
 def WriteMFMAScale_32X32X64_F8F6F4 : SchedWriteVariant<[
     SchedVar<PredIsF8_MFMA_SCALE, [Write16PassMAI]>,
@@ -405,8 +405,8 @@ def : HWWriteRes<WriteLDS,           [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteSALU,          [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSMEM,          [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,          [HWVMEM,   HWRC], 320>;
-let ReleaseAtCycles = [8] in {
-def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+let ReleaseAtCycles = [16, 16] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
 }
 def : HWWriteRes<WriteBarrier,       [HWBranch],       2000>;
 
@@ -442,8 +442,8 @@ def : HWWriteRes<WriteSALU,          [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSFPU,          [HWSALU,   HWRC], 4>;
 def : HWWriteRes<WriteSMEM,          [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,          [HWVMEM,   HWRC], 320>;
-let ReleaseAtCycles = [8] in {
-def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+let ReleaseAtCycles = [16, 16] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
 }
 def : HWWriteRes<WriteBarrier,       [HWBranch],       2000>;
 } // End RetireOOO = 1
@@ -476,8 +476,8 @@ def : HWWriteRes<WriteSALU,              [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSFPU,              [HWSALU,   HWRC], 4>;
 def : HWWriteRes<WriteSMEM,              [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,              [HWVMEM,   HWRC], 320>;
-let ReleaseAtCycles = [8] in {
-def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+let ReleaseAtCycles = [16, 16] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
 }
 def : HWWriteRes<WriteBarrier,           [HWBranch],       2000>;
 
@@ -524,8 +524,8 @@ def : HWWriteRes<WriteSALU,              [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSFPU,              [HWSALU,   HWRC], 4>;
 def : HWWriteRes<WriteSMEM,              [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,              [HWVMEM,   HWRC], 320>;
-let ReleaseAtCycles = [8] in {
-def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   8>;
+let ReleaseAtCycles = [16, 16] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
 }
 def : HWWriteRes<WriteBarrier,           [HWBranch],       2000>;
 

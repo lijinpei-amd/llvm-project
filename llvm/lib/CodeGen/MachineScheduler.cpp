@@ -183,7 +183,7 @@ STATISTIC(NumFirstValidPostRA,
 cl::opt<MISched::Direction> llvm::PreRADirection(
     "misched-prera-direction", cl::Hidden,
     cl::desc("Pre reg-alloc list scheduling direction"),
-    cl::init(MISched::Unspecified),
+    cl::init(MISched::TopDown),
     cl::values(
         clEnumValN(MISched::TopDown, "topdown",
                    "Force top-down pre reg-alloc list scheduling"),
@@ -195,7 +195,7 @@ cl::opt<MISched::Direction> llvm::PreRADirection(
 static cl::opt<MISched::Direction> PostRADirection(
     "misched-postra-direction", cl::Hidden,
     cl::desc("Post reg-alloc list scheduling direction"),
-    cl::init(MISched::Unspecified),
+    cl::init(MISched::TopDown),
     cl::values(
         clEnumValN(MISched::TopDown, "topdown",
                    "Force top-down post reg-alloc list scheduling"),
@@ -3187,7 +3187,23 @@ SUnit *SchedBoundary::pickOnlyChoice() {
     }
     ++I;
   }
-  for (unsigned i = 0; Available.empty(); ++i) {
+  auto ContRelease = [&]() -> bool {
+    if (Available.empty()) {
+      return true;
+    }
+    unsigned MinAvailableCycle = std::numeric_limits<unsigned>::max();
+    if (isTop()) {
+      for (auto& SU: Available) {
+        MinAvailableCycle = std::min(SU->TopReadyCycle, MinAvailableCycle);
+      }
+    } else {
+      for (auto& SU: Available) {
+        MinAvailableCycle = std::min(SU->BotReadyCycle, MinAvailableCycle);
+      }
+    }
+    return MinAvailableCycle > CurrCycle;
+  };
+  for (unsigned i = 0; ContRelease(); ++i) {
 //  FIXME: Re-enable assert once PR20057 is resolved.
 //    assert(i <= (HazardRec->getMaxLookAhead() + MaxObservedStall) &&
 //           "permanent hazard");
@@ -3363,7 +3379,7 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
 		auto NewResCount = getExcessCriticalResource(LatencyFactor, RemCount, RemLatency);
 		if (NewResCount) {
 			llvm::errs() << "CurrCycle: " << CurrZone.getCurrCycle() << " found critical resource: " << SchedModel->getProcResource(I)->Name << "\n";
-			llvm::errs() << "latency: " << RemLatency << " RemCount: " << RemCount << " LatencyFactor: " << LatencyFactor << " ResFactor: " << ResFactor << "\n"; 
+			llvm::errs() << "latency: " << RemLatency << " RemCount: " << RemCount << " LatencyFactor: " << LatencyFactor << " ResFactor: " << ResFactor << "\n";
 		}
 		if (NewResCount > CriticalResCount) {
 			CriticalResCount = NewResCount;
@@ -3375,7 +3391,7 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
 		auto RemCount = Rem.RemainingCounts[CriticalRes];
 		auto ResFactor = SchedModel->getResourceFactor(CriticalRes);
 			llvm::errs() << "CurrCycle: " << CurrZone.getCurrCycle() << " found critical resource: " << SchedModel->getProcResource(CriticalRes)->Name << "\n";
-			llvm::errs() << "latency: " << RemLatency << " RemCount: " << RemCount << " LatencyFactor: " << LatencyFactor << " ResFactor: " << ResFactor << "\n"; 
+			llvm::errs() << "latency: " << RemLatency << " RemCount: " << RemCount << " LatencyFactor: " << LatencyFactor << " ResFactor: " << ResFactor << "\n";
 		Policy.CriticalResIdx = CriticalRes;
 	}
   }
