@@ -4063,6 +4063,7 @@ bool SIRegisterInfo::shouldCoalesce(
     MachineInstr *MI, const TargetRegisterClass *SrcRC, unsigned SubReg,
     const TargetRegisterClass *DstRC, unsigned DstSubReg,
     const TargetRegisterClass *NewRC, LiveIntervals &LIS) const {
+    return true;
     if (NewRC->MC->getSizeInBits() == 192) {
       return false;
     }

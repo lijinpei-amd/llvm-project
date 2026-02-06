@@ -818,7 +818,6 @@ bool SIFixSGPRCopies::run(MachineFunction &MF) {
 }
 
 void SIFixSGPRCopies::processPHINode(MachineInstr &MI) {
-  return;
   bool AllAGPRUses = true;
   SetVector<const MachineInstr *> worklist;
   SmallPtrSet<const MachineInstr *, 4> Visited;
@@ -849,6 +848,7 @@ void SIFixSGPRCopies::processPHINode(MachineInstr &MI) {
   const TargetRegisterClass *RC0 = MRI->getRegClass(PHIRes);
   if (HasUses && AllAGPRUses && !TRI->isAGPRClass(RC0)) {
     LLVM_DEBUG(dbgs() << "Moving PHI to AGPR: " << MI);
+    errs() << "Moving PHI to AGPR: " << MI;
     MRI->setRegClass(PHIRes, TRI->getEquivalentAGPRClass(RC0));
     for (unsigned I = 1, N = MI.getNumOperands(); I != N; I += 2) {
       MachineInstr *DefMI = MRI->getVRegDef(MI.getOperand(I).getReg());
@@ -860,6 +860,7 @@ void SIFixSGPRCopies::processPHINode(MachineInstr &MI) {
   if (TRI->hasVectorRegisters(MRI->getRegClass(PHIRes)) ||
       RC0 == &AMDGPU::VReg_1RegClass) {
     LLVM_DEBUG(dbgs() << "Legalizing PHI: " << MI);
+    errs() << "Legalizing PHI: " << MI;
     TII->legalizeOperands(MI, MDT);
   }
 

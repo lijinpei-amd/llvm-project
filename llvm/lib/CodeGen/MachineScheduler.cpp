@@ -1691,6 +1691,7 @@ void ScheduleDAGMILive::dump() const {
 /// ScheduleDAGMILive then it will want to override this virtual method in order
 /// to update any specialized state.
 void ScheduleDAGMILive::schedule() {
+  dbgs() << "ScheduleDAGMILive::schedule starting\n";
   LLVM_DEBUG(dbgs() << "ScheduleDAGMILive::schedule starting\n");
   LLVM_DEBUG(SchedImpl->dumpPolicy());
   buildDAGWithRegPressure();
@@ -3393,7 +3394,9 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
 			llvm::errs() << "CurrCycle: " << CurrZone.getCurrCycle() << " found critical resource: " << SchedModel->getProcResource(CriticalRes)->Name << "\n";
 			llvm::errs() << "latency: " << RemLatency << " RemCount: " << RemCount << " LatencyFactor: " << LatencyFactor << " ResFactor: " << ResFactor << "\n";
 		Policy.CriticalResIdx = CriticalRes;
-	}
+	} else {
+	llvm::errs() << "final critical resource: none\n";
+  }
   }
 
   (void)RemLatencyComputed;
@@ -3990,6 +3993,26 @@ void GenericScheduler::initCandidate(SchedCandidate &Cand, SUnit *SU,
              << Cand.RPDelta.Excess.getUnitInc() << "\n");
 }
 
+static unsigned getResourceUseCount(bool HasReservedResource, unsigned ResId, const MCSchedClassDesc * SC, const TargetSchedModel* SchedModel) {
+  if (!HasReservedResource) {
+    return 0;
+  }
+  if (!SC) {
+  return 0;
+  }
+  unsigned Count = 0;
+    for (TargetSchedModel::ProcResIter PI = SchedModel->getWriteProcResBegin(SC),
+                                       PE = SchedModel->getWriteProcResEnd(SC);
+         PI != PE; ++PI) {
+	 if (PI->ProcResourceIdx != ResId) {
+	 continue;
+	 }
+	 Count += PI->ReleaseAtCycle - PI->AcquireAtCycle;
+	 }
+	 return Count;
+}
+
+
 /// Apply a set of heuristics to a new candidate. Heuristics are currently
 /// hierarchical. This may be more efficient than a graduated cost model because
 /// we don't need to evaluate all aspects of the model for each node in the
@@ -4036,17 +4059,27 @@ bool GenericScheduler::tryCandidate(SchedCandidate &Cand,
   // "tie-breaking" in nature.
   bool SameBoundary = Zone != nullptr;
   if (SameBoundary) {
-    // For loops that are acyclic path limited, aggressively schedule for
-    // latency. Within an single cycle, whenever CurrMOps > 0, allow normal
-    // heuristics to take precedence.
-    if (Rem.IsAcyclicLatencyLimited && !Zone->getCurrMOps() &&
-        tryLatency(TryCand, Cand, *Zone))
-      return TryCand.Reason != NoCand;
+//    // For loops that are acyclic path limited, aggressively schedule for
+//    // latency. Within an single cycle, whenever CurrMOps > 0, allow normal
+//    // heuristics to take precedence.
+//    if (Rem.IsAcyclicLatencyLimited && !Zone->getCurrMOps() &&
+//        tryLatency(TryCand, Cand, *Zone))
+//      return TryCand.Reason != NoCand;
 
     // Prioritize instructions that read unbuffered resources by stall cycles.
     if (tryLess(Zone->getLatencyStallCycles(TryCand.SU),
                 Zone->getLatencyStallCycles(Cand.SU), TryCand, Cand, Stall))
       return TryCand.Reason != NoCand;
+
+  if (SchedModel && SchedModel->hasInstrSchedModel()) {
+	  auto CriticalResIdx = Cand.Policy.CriticalResIdx;
+	  if (CriticalResIdx) {
+		  // Prioritize instructions that use critical resource
+		  if (tryGreater(getResourceUseCount(TryCand.SU->hasReservedResource, CriticalResIdx, DAG->getSchedClass(TryCand.SU), SchedModel),
+			      getResourceUseCount(Cand.SU->hasReservedResource, CriticalResIdx, DAG->getSchedClass(Cand.SU), SchedModel), TryCand, Cand, CriticalRes))
+		    return TryCand.Reason != NoCand;
+	  }
+  }
   }
 
   // Keep clustered nodes together to encourage downstream peephole
@@ -4229,6 +4262,7 @@ SUnit *GenericScheduler::pickNode(bool &IsTopNode) {
     if (!SU) {
       CandPolicy NoPolicy;
       TopCand.reset(NoPolicy);
+      setPolicy(TopCand.Policy, /*IsPostRA=*/false, Top, nullptr);
       pickNodeFromQueue(Top, NoPolicy, DAG->getTopRPTracker(), TopCand);
       assert(TopCand.Reason != NoCand && "failed to find a candidate");
       tracePick(TopCand);
@@ -4240,6 +4274,7 @@ SUnit *GenericScheduler::pickNode(bool &IsTopNode) {
     if (!SU) {
       CandPolicy NoPolicy;
       BotCand.reset(NoPolicy);
+      setPolicy(BotCand.Policy, /*IsPostRA=*/false, Bot, nullptr);
       pickNodeFromQueue(Bot, NoPolicy, DAG->getBotRPTracker(), BotCand);
       assert(BotCand.Reason != NoCand && "failed to find a candidate");
       tracePick(BotCand);
@@ -4428,25 +4463,6 @@ void PostGenericScheduler::registerRoots() {
   if (DumpCriticalPathLength) {
     errs() << "Critical Path(PGS-RR ): " << Rem.CriticalPath << " \n";
   }
-}
-
-static unsigned getResourceUseCount(bool HasReservedResource, unsigned ResId, const MCSchedClassDesc * SC, const TargetSchedModel* SchedModel) {
-  if (!HasReservedResource) {
-    return 0;
-  }
-  if (!SC) {
-  return 0;
-  }
-  unsigned Count = 0;
-    for (TargetSchedModel::ProcResIter PI = SchedModel->getWriteProcResBegin(SC),
-                                       PE = SchedModel->getWriteProcResEnd(SC);
-         PI != PE; ++PI) {
-	 if (PI->ProcResourceIdx != ResId) {
-	 continue;
-	 }
-	 Count += PI->ReleaseAtCycle - PI->AcquireAtCycle;
-	 }
-	 return Count;
 }
 
 /// Apply a set of heuristics to a new candidate for PostRA scheduling.

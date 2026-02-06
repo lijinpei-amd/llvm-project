@@ -7246,40 +7246,58 @@ SIInstrInfo::legalizeOperands(MachineInstr &MI,
   // The register class of the operands much be the same type as the register
   // class of the output.
   if (MI.getOpcode() == AMDGPU::PHI) {
-    const TargetRegisterClass *RC = nullptr, *SRC = nullptr, *VRC = nullptr;
-    for (unsigned i = 1, e = MI.getNumOperands(); i != e; i += 2) {
-      if (!MI.getOperand(i).isReg() || !MI.getOperand(i).getReg().isVirtual())
-        continue;
-      const TargetRegisterClass *OpRC =
-          MRI.getRegClass(MI.getOperand(i).getReg());
-      if (RI.hasVectorRegisters(OpRC)) {
-        VRC = OpRC;
-      } else {
-        SRC = OpRC;
-      }
-    }
+    // const TargetRegisterClass *RC = nullptr, *SRC = nullptr, *VRC = nullptr;
+    // for (unsigned i = 1, e = MI.getNumOperands(); i != e; i += 2) {
+    //   if (!MI.getOperand(i).isReg() || !MI.getOperand(i).getReg().isVirtual())
+    //     continue;
+    //   const TargetRegisterClass *OpRC =
+    //       MRI.getRegClass(MI.getOperand(i).getReg());
+    //   if (RI.hasVectorRegisters(OpRC)) {
+    //     VRC = OpRC;
+    //   } else {
+    //     SRC = OpRC;
+    //   }
+    // }
 
-    // If any of the operands are VGPR registers, then they all most be
-    // otherwise we will create illegal VGPR->SGPR copies when legalizing
-    // them.
-    if (VRC || !RI.isSGPRClass(getOpRegClass(MI, 0))) {
-      if (!VRC) {
-        assert(SRC);
-        if (getOpRegClass(MI, 0) == &AMDGPU::VReg_1RegClass) {
-          VRC = &AMDGPU::VReg_1RegClass;
-        } else
-          VRC = RI.isAGPRClass(getOpRegClass(MI, 0))
-                    ? RI.getEquivalentAGPRClass(SRC)
-                    : RI.getEquivalentVGPRClass(SRC);
-      } else {
-        VRC = RI.isAGPRClass(getOpRegClass(MI, 0))
-                  ? RI.getEquivalentAGPRClass(VRC)
-                  : RI.getEquivalentVGPRClass(VRC);
-      }
-      RC = VRC;
-    } else {
-      RC = SRC;
-    }
+    // if (VRC) {
+    // llvm::errs() << "VRC: " << RI.getRegClassName(VRC) << "\n";
+    // } else {
+    // llvm::errs() << "no-VRC\n";
+    // }
+
+    // auto* DstRC = getOpRegClass(MI, 0);
+
+    // // If any of the operands are VGPR registers, then they all most be
+    // // otherwise we will create illegal VGPR->SGPR copies when legalizing
+    // // them.
+    // if (VRC || !RI.isSGPRClass(DstRC)) {
+    //   auto GetEquRC = [&](const TargetRegisterClass* DstRC, const TargetRegisterClass* AsRC) {
+    //     if (RI.isVectorSuperClass(DstRC)) {
+    //       return RI.getEquivalentAVClass(AsRC);
+    //     }
+    //     if (RI.isAGPRClass(DstRC)) {
+    //       return RI.getEquivalentAGPRClass(AsRC);
+    //     }
+    //     return RI.getEquivalentVGPRClass(AsRC);
+    //   };
+    //   if (!VRC) {
+    //     assert(SRC);
+    //     if (DstRC == &AMDGPU::VReg_1RegClass) {
+    //       VRC = &AMDGPU::VReg_1RegClass;
+    //     } else
+    //       VRC = GetEquRC(DstRC, SRC);
+    //   } else {
+    //     VRC = GetEquRC(DstRC, VRC);
+    //   }
+    //   RC = VRC;
+    // } else {
+    //   RC = SRC;
+    // }
+
+    // llvm::errs() << "RC: " << RI.getRegClassName(RC) << "\n";
+    // llvm::errs() << "Op0 RC: " << RI.getRegClassName(getOpRegClass(MI, 0)) << "\n";
+    // llvm::errs() << "Op0 RC isAReg: " << RI.isAGPRClass(getOpRegClass(MI, 0)) << "\n";
+    const TargetRegisterClass *VRC = getOpRegClass(MI, 0);
 
     // Update all the operands so they have the same type.
     for (unsigned I = 1, E = MI.getNumOperands(); I != E; I += 2) {
@@ -7293,8 +7311,9 @@ SIInstrInfo::legalizeOperands(MachineInstr &MI,
 
       // Avoid creating no-op copies with the same src and dst reg class.  These
       // confuse some of the machine passes.
-      legalizeGenericOperand(*InsertBB, Insert, RC, Op, MRI, MI.getDebugLoc());
+      legalizeGenericOperand(*InsertBB, Insert, VRC, Op, MRI, MI.getDebugLoc());
     }
+    return CreatedBB;
   }
 
   // REG_SEQUENCE doesn't really require operand legalization, but if one has a

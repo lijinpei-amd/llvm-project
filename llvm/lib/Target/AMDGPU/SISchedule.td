@@ -177,8 +177,8 @@ multiclass SICommonWriteRes {
   def : HWWriteRes<WriteSALU,    [HWSALU],   1>;
   def : HWWriteRes<WriteSMEM,    [HWLGKM],   5>;
   def : HWWriteRes<WriteVMEM,    [HWVMEM],   80>;
-  let ReleaseAtCycles = [16, 16] in {
-        def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
+  let ReleaseAtCycles = [20, 8] in {
+        def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   20>;
   }
   def : HWWriteRes<WriteBarrier, [HWBranch], 500>; // XXX: Guessed ???
 
@@ -405,8 +405,8 @@ def : HWWriteRes<WriteLDS,           [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteSALU,          [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSMEM,          [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,          [HWVMEM,   HWRC], 320>;
-let ReleaseAtCycles = [16, 16] in {
-def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
+let ReleaseAtCycles = [20, 8] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   20>;
 }
 def : HWWriteRes<WriteBarrier,       [HWBranch],       2000>;
 
@@ -442,8 +442,8 @@ def : HWWriteRes<WriteSALU,          [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSFPU,          [HWSALU,   HWRC], 4>;
 def : HWWriteRes<WriteSMEM,          [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,          [HWVMEM,   HWRC], 320>;
-let ReleaseAtCycles = [16, 16] in {
-def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
+let ReleaseAtCycles = [20, 8] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   20>;
 }
 def : HWWriteRes<WriteBarrier,       [HWBranch],       2000>;
 } // End RetireOOO = 1
@@ -476,8 +476,8 @@ def : HWWriteRes<WriteSALU,              [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSFPU,              [HWSALU,   HWRC], 4>;
 def : HWWriteRes<WriteSMEM,              [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,              [HWVMEM,   HWRC], 320>;
-let ReleaseAtCycles = [16, 16] in {
-def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
+let ReleaseAtCycles = [20, 8] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   20>;
 }
 def : HWWriteRes<WriteBarrier,           [HWBranch],       2000>;
 
@@ -524,8 +524,8 @@ def : HWWriteRes<WriteSALU,              [HWSALU,   HWRC], 2>;
 def : HWWriteRes<WriteSFPU,              [HWSALU,   HWRC], 4>;
 def : HWWriteRes<WriteSMEM,              [HWLGKM,   HWRC], 20>;
 def : HWWriteRes<WriteVMEM,              [HWVMEM,   HWRC], 320>;
-let ReleaseAtCycles = [16, 16] in {
-def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   16>;
+let ReleaseAtCycles = [20, 8] in {
+def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP, HW_LJP_LDS],   20>;
 }
 def : HWWriteRes<WriteBarrier,           [HWBranch],       2000>;
 

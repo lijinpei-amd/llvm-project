@@ -556,10 +556,12 @@ SUnit *GCNSchedStrategy::pickNode(bool &IsTopNode) {
   do {
     PickedPending = false;
     if (RegionPolicy.OnlyTopDown) {
+    llvm::dbgs() << "GCNSched only top-down\n";
       SU = pickOnlyChoice(Top, SchedModel);
       if (!SU) {
         CandPolicy NoPolicy;
         TopCand.reset(NoPolicy);
+        setPolicy(TopCand.Policy, /*IsPostRA=*/false, Top, nullptr);
         pickNodeFromQueue(Top, NoPolicy, DAG->getTopRPTracker(), TopCand,
                           PickedPending,
                           /*IsBottomUp=*/false);
@@ -568,10 +570,12 @@ SUnit *GCNSchedStrategy::pickNode(bool &IsTopNode) {
       }
       IsTopNode = true;
     } else if (RegionPolicy.OnlyBottomUp) {
+    llvm::dbgs() << "GCNSched only bottom-up\n";
       SU = pickOnlyChoice(Bot, SchedModel);
       if (!SU) {
         CandPolicy NoPolicy;
         BotCand.reset(NoPolicy);
+        setPolicy(BotCand.Policy, /*IsPostRA=*/false, Bot, nullptr);
         pickNodeFromQueue(Bot, NoPolicy, DAG->getBotRPTracker(), BotCand,
                           PickedPending,
                           /*IsBottomUp=*/true);
@@ -580,6 +584,7 @@ SUnit *GCNSchedStrategy::pickNode(bool &IsTopNode) {
       }
       IsTopNode = false;
     } else {
+    llvm::dbgs() << "GCNSched bi-directional\n";
       SU = pickNodeBidirectional(IsTopNode, PickedPending);
     }
   } while (SU->isScheduled);
@@ -1766,6 +1771,7 @@ bool MemoryClauseInitialScheduleStage::shouldRevertScheduling(
 }
 
 bool GCNSchedStage::mayCauseSpilling(unsigned WavesAfter) {
+  return false;
   if (WavesAfter <= MFI.getMinWavesPerEU() && isRegionWithExcessRP() &&
       !PressureAfter.less(MF, PressureBefore)) {
     LLVM_DEBUG(dbgs() << "New pressure will result in more spilling.\n");
