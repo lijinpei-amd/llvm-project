@@ -1190,6 +1190,9 @@ bool DAGCombiner::reassociationCanBreakAddressingModePattern(unsigned Opc,
         AM.HasBaseReg = true;
         AM.BaseOffs = C2APIntVal.getSExtValue();
         EVT VT = LoadStore->getMemoryVT();
+        if (LoadStore->memoperands().size() != 1) {
+          return true;
+        }
         unsigned AS = LoadStore->getAddressSpace();
         Type *AccessTy = VT.getTypeForEVT(*DAG.getContext());
         if (!TLI.isLegalAddressingMode(DAG.getDataLayout(), AM, AccessTy, AS))
