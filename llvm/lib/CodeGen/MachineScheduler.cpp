@@ -2193,6 +2193,20 @@ void BaseMemOpClusterMutation::collectMemOpRecords(
       continue;
 
     const MachineInstr &MI = *SU.getInstr();
+    // Don't cluster ds_read
+    bool has_as3 = false;
+    bool has_none_as3 = false;
+    for (auto mo : MI.memoperands()) {
+      if (mo->getAddrSpace() == 3) {
+        has_as3 = true;
+      } else {
+        has_none_as3 = true;
+      }
+    }
+    if (has_as3 && !has_none_as3) {
+      continue;
+    }
+
     SmallVector<const MachineOperand *, 4> BaseOps;
     int64_t Offset;
     bool OffsetIsScalable;
