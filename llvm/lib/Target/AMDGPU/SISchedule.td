@@ -22,6 +22,7 @@ def WriteLDS    : SchedWrite;
 def WriteSALU   : SchedWrite;
 def WriteSMEM   : SchedWrite;
 def WriteVMEM   : SchedWrite;
+def WriteBuffer_LJP: SchedWrite;
 def WriteBarrier : SchedWrite;
 
 def MIVGPRRead  : SchedRead;
@@ -116,13 +117,16 @@ def HWExport : ProcResource<1> {
   let BufferSize = 1;
 }
 def HWLGKM   : ProcResource<1> {
-  let BufferSize = 1;
+  let BufferSize = 0;
 }
 def HWSALU   : ProcResource<1> {
   let BufferSize = 1;
 }
 def HWVMEM   : ProcResource<1> {
   let BufferSize = 1;
+}
+def HW_BUFFER_LJP   : ProcResource<1> {
+  let BufferSize = 0;
 }
 def HWVALU   : ProcResource<1> {
   let BufferSize = 1;
@@ -155,6 +159,7 @@ def MIReadVGPR : SchedReadVariant<[
       SchedVar<PredMIReadVGPR, [MIVGPRRead]>,
       SchedVar<NoSchedPred, [ReadDefault]>]>;
 
+
 // The latency numbers are taken from AMD Accelerated Parallel Processing
 // guide. They may not be accurate.
 
@@ -162,9 +167,13 @@ def MIReadVGPR : SchedReadVariant<[
 multiclass SICommonWriteRes {
 
   let RetireOOO = 1 in { // llvm-mca specific flag
+let ReleaseAtCycles = [20] in {
+      def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   20>;
+}
   def : HWWriteRes<WriteBranch,  [HWBranch], 8>;
   def : HWWriteRes<WriteExport,  [HWExport], 4>;
-  def : HWWriteRes<WriteLDS,     [HWLGKM],   5>; // Can be between 2 and 64
+  let ReleaseAtCycles = [8] in
+  def : HWWriteRes<WriteLDS,     [HWLGKM],   8>; // Can be between 2 and 64
   def : HWWriteRes<WriteSALU,    [HWSALU],   1>;
   def : HWWriteRes<WriteSMEM,    [HWLGKM],   5>;
   def : HWWriteRes<WriteVMEM,    [HWVMEM],   80>;
@@ -375,6 +384,9 @@ let SchedModel = GFX10SpeedModel in {
 // The latency values are 1 / (operations / cycle).
 // Add 1 stall cycle for VGPR read.
 let RetireOOO = 1 in { // llvm-mca specific flag
+let ReleaseAtCycles = [20] in {
+      def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   20>;
+}
 def : HWWriteRes<Write32Bit,         [HWVALU, HWRC],   5>;
 def : HWWriteRes<WriteFloatCvt,      [HWVALU, HWRC],   5>;
 def : HWWriteRes<Write64Bit,         [HWVALU, HWRC],   6>;
@@ -408,6 +420,9 @@ let SchedModel = GFX11SpeedModel in {
 // The latency values are 1 / (operations / cycle).
 // Add 1 stall cycle for VGPR read.
 let RetireOOO = 1 in { // llvm-mca specific flag
+let ReleaseAtCycles = [20] in {
+      def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   20>;
+}
 def : HWWriteRes<Write32Bit,         [HWVALU, HWRC],   5>;
 def : HWWriteRes<WriteFloatCvt,      [HWVALU, HWRC],   5>;
 def : HWWriteRes<Write64Bit,         [HWVALU, HWRC],   6>;
@@ -437,6 +452,9 @@ def : InstRW<[WriteCopy], (instrs COPY)>;
 }  // End SchedModel = GFX11SpeedModel
 
 let SchedModel = GFX12SpeedModel in {
+let ReleaseAtCycles = [20] in {
+      def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   20>;
+}
 
 def : HWWriteRes<Write32Bit,             [HWVALU, HWRC],   5>;
 def : HWWriteRes<WriteFloatCvt,          [HWVALU, HWRC],   5>;
@@ -516,6 +534,9 @@ def : InstRW<[WriteXDL2PassWMMA], (instregex "^V_WMMA.*_F32_32X16X128_F4")>;
 
 let SchedModel = GFX1250SpeedModel in {
 defm : GFX125xCommonWriteRes;
+let ReleaseAtCycles = [20] in {
+      def : HWWriteRes<WriteBuffer_LJP,    [HW_BUFFER_LJP],   20>;
+}
 
 def : HWWriteRes<Write64Bit,             [HWVALU, HWRC],   6>;
 def : HWWriteRes<WriteIntMul,            [HWVALU, HWRC],   8>;
