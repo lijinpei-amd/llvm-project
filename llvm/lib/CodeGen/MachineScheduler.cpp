@@ -127,6 +127,8 @@ STATISTIC(
     "Number of scheduling units chosen for BotPathReduce heuristic pre-RA");
 STATISTIC(NumNodeOrderPreRA,
           "Number of scheduling units chosen for NodeOrder heuristic pre-RA");
+STATISTIC(NumCriticalResourcePreRA,
+          "Number of scheduling units chosen for CriticalRes heuristic pre-RA");
 STATISTIC(NumFirstValidPreRA,
           "Number of scheduling units chosen for FirstValid heuristic pre-RA");
 
@@ -173,6 +175,9 @@ STATISTIC(
     "Number of scheduling units chosen for BotPathReduce heuristic post-RA");
 STATISTIC(NumNodeOrderPostRA,
           "Number of scheduling units chosen for NodeOrder heuristic post-RA");
+STATISTIC(
+    NumCriticalResourcePostRA,
+    "Number of scheduling units chosen for CriticalRes heuristic post-RA");
 STATISTIC(NumFirstValidPostRA,
           "Number of scheduling units chosen for FirstValid heuristic post-RA");
 
@@ -3314,6 +3319,15 @@ bool GenericSchedulerBase::shouldReduceLatency(const CandPolicy &Policy,
   return RemLatency + CurrZone.getCurrCycle() > Rem.CriticalPath;
 }
 
+static unsigned getResourceExcessCount(unsigned LFactor, unsigned Count,
+                                       unsigned Latency) {
+  if (Count > Latency * LFactor) {
+    return Count - Latency * LFactor;
+  } else {
+    return 0;
+  }
+}
+
 /// Set the CandPolicy given a scheduling zone given the current resources and
 /// latencies inside and outside the zone.
 void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
@@ -3338,10 +3352,54 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
                                          OtherCount, RemLatency, false);
   }
 
+  unsigned CriticalRes = 0;
+  unsigned CriticalResCount = 0;
+  if (SchedModel->hasInstrSchedModel()) {
+    RemLatency = computeRemLatency(CurrZone);
+    RemLatencyComputed = true;
+    auto LatencyFactor = SchedModel->getLatencyFactor();
+    for (unsigned I = 0, E = SchedModel->getNumProcResourceKinds(); I < E;
+         ++I) {
+      auto RemCount = Rem.RemainingCounts[I];
+      auto ResFactor = SchedModel->getResourceFactor(I);
+      auto NewResCount =
+          getResourceExcessCount(LatencyFactor, RemCount, RemLatency);
+      LLVM_DEBUG(if (NewResCount) {
+        dbgs() << "CurrCycle: " << CurrZone.getCurrCycle()
+               << " found critical resource: "
+               << SchedModel->getProcResource(I)->Name << "\n";
+        dbgs() << "latency: " << RemLatency << " RemCount: " << RemCount
+               << " LatencyFactor: " << LatencyFactor
+               << " ResFactor: " << ResFactor << "\n";
+      });
+      if (NewResCount > CriticalResCount) {
+        CriticalResCount = NewResCount;
+        CriticalRes = I;
+      }
+    }
+    if (CriticalRes) {
+      auto RemCount = Rem.RemainingCounts[CriticalRes];
+      auto ResFactor = SchedModel->getResourceFactor(CriticalRes);
+      Policy.CriticalResIdx = CriticalRes;
+      LLVM_DEBUG({
+        dbgs() << "final critical resource\n";
+        dbgs() << "CurrCycle: " << CurrZone.getCurrCycle()
+               << " found critical resource: "
+               << SchedModel->getProcResource(CriticalRes)->Name << "\n";
+        dbgs() << "latency: " << RemLatency << " RemCount: " << RemCount
+               << " LatencyFactor: " << LatencyFactor
+               << " ResFactor: " << ResFactor << "\n";
+      });
+    } else {
+      Policy.CriticalResIdx = 0;
+      LLVM_DEBUG(errs() << "final critical resource: none\n";);
+    }
+  }
+
   // Schedule aggressively for latency in PostRA mode. We don't check for
   // acyclic latency during PostRA, and highly out-of-order processors will
   // skip PostRA scheduling.
-  if (!OtherResLimited &&
+  if (!OtherResLimited && Policy.CriticalResIdx == 0 &&
       (IsPostRA || shouldReduceLatency(Policy, CurrZone, !RemLatencyComputed,
                                        RemLatency))) {
     Policy.ReduceLatency |= true;
@@ -3391,6 +3449,7 @@ const char *GenericSchedulerBase::getReasonStr(
   case BotHeightReduce:return "BOT-HEIGHT";
   case BotPathReduce:  return "BOT-PATH  ";
   case NodeOrder:      return "ORDER     ";
+  case CriticalRes:      return "CRITICAL-RESOURCE";
   case FirstValid:     return "FIRST     ";
   };
   // clang-format on
@@ -3579,6 +3638,9 @@ static void tracePick(GenericSchedulerBase::CandReason Reason, bool IsTop,
     case GenericScheduler::NodeOrder:
       NumNodeOrderPostRA++;
       return;
+    case GenericScheduler::CriticalRes:
+      NumCriticalResourcePostRA++;
+      return;
     case GenericScheduler::FirstValid:
       NumFirstValidPostRA++;
       return;
@@ -3637,6 +3699,9 @@ static void tracePick(GenericSchedulerBase::CandReason Reason, bool IsTop,
       return;
     case GenericScheduler::NodeOrder:
       NumNodeOrderPreRA++;
+      return;
+    case GenericScheduler::CriticalRes:
+      NumCriticalResourcePreRA++;
       return;
     case GenericScheduler::FirstValid:
       NumFirstValidPreRA++;
@@ -3923,6 +3988,27 @@ void GenericScheduler::initCandidate(SchedCandidate &Cand, SUnit *SU,
              << Cand.RPDelta.Excess.getUnitInc() << "\n");
 }
 
+static unsigned getResourceUseCount(bool HasReservedResource, unsigned ResId,
+                                    const MCSchedClassDesc *SC,
+                                    const TargetSchedModel *SchedModel) {
+  if (!HasReservedResource) {
+    return 0;
+  }
+  if (!SC) {
+    return 0;
+  }
+  unsigned Count = 0;
+  for (TargetSchedModel::ProcResIter PI = SchedModel->getWriteProcResBegin(SC),
+                                     PE = SchedModel->getWriteProcResEnd(SC);
+       PI != PE; ++PI) {
+    if (PI->ProcResourceIdx != ResId) {
+      continue;
+    }
+    Count += PI->ReleaseAtCycle - PI->AcquireAtCycle;
+  }
+  return Count;
+}
+
 /// Apply a set of heuristics to a new candidate. Heuristics are currently
 /// hierarchical. This may be more efficient than a graduated cost model because
 /// we don't need to evaluate all aspects of the model for each node in the
@@ -3980,6 +4066,21 @@ bool GenericScheduler::tryCandidate(SchedCandidate &Cand,
     if (tryLess(Zone->getLatencyStallCycles(TryCand.SU),
                 Zone->getLatencyStallCycles(Cand.SU), TryCand, Cand, Stall))
       return TryCand.Reason != NoCand;
+  }
+
+  if (SchedModel && SchedModel->hasInstrSchedModel()) {
+    auto CriticalResIdx = Cand.Policy.CriticalResIdx;
+    if (CriticalResIdx) {
+      // Prioritize instructions that use critical resource
+      if (tryGreater(
+              getResourceUseCount(TryCand.SU->hasReservedResource,
+                                  CriticalResIdx,
+                                  DAG->getSchedClass(TryCand.SU), SchedModel),
+              getResourceUseCount(Cand.SU->hasReservedResource, CriticalResIdx,
+                                  DAG->getSchedClass(Cand.SU), SchedModel),
+              TryCand, Cand, CriticalRes))
+        return TryCand.Reason != NoCand;
+    }
   }
 
   // Keep clustered nodes together to encourage downstream peephole
@@ -4380,6 +4481,21 @@ bool PostGenericScheduler::tryCandidate(SchedCandidate &Cand,
   if (tryLess(Top.getLatencyStallCycles(TryCand.SU),
               Top.getLatencyStallCycles(Cand.SU), TryCand, Cand, Stall))
     return TryCand.Reason != NoCand;
+
+  if (SchedModel && SchedModel->hasInstrSchedModel()) {
+    auto CriticalResIdx = Cand.Policy.CriticalResIdx;
+    if (CriticalResIdx) {
+      // Prioritize instructions that use critical resource
+      if (tryGreater(
+              getResourceUseCount(TryCand.SU->hasReservedResource,
+                                  CriticalResIdx,
+                                  DAG->getSchedClass(TryCand.SU), SchedModel),
+              getResourceUseCount(Cand.SU->hasReservedResource, CriticalResIdx,
+                                  DAG->getSchedClass(Cand.SU), SchedModel),
+              TryCand, Cand, CriticalRes))
+        return TryCand.Reason != NoCand;
+    }
+  }
 
   // Keep clustered nodes together.
   unsigned CandZoneCluster = Cand.AtTop ? TopClusterID : BotClusterID;
