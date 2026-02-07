@@ -2093,7 +2093,7 @@ bool MemoryClauseInitialScheduleStage::shouldRevertScheduling(
 
 bool GCNSchedStage::mayCauseSpilling(unsigned WavesAfter) {
   if (WavesAfter <= MFI.getMinWavesPerEU() && isRegionWithExcessRP() &&
-      !PressureAfter.less(MF, PressureBefore)) {
+      PressureBefore.less(MF, PressureAfter, S.getTargetOccupancy(), true)) {
     LLVM_DEBUG(dbgs() << "New pressure will result in more spilling.\n");
     return true;
   }

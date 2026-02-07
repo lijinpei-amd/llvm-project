@@ -143,7 +143,7 @@ struct RegExcess {
 } // namespace
 
 bool GCNRegPressure::less(const MachineFunction &MF, const GCNRegPressure &O,
-                          unsigned MaxOccupancy) const {
+                          unsigned MaxOccupancy, bool OnlyOccAndSpill) const {
   const GCNSubtarget &ST = MF.getSubtarget<GCNSubtarget>();
   unsigned DynamicVGPRBlockSize =
       MF.getInfo<SIMachineFunctionInfo>()->getDynamicVGPRBlockSize();
@@ -210,6 +210,10 @@ bool GCNRegPressure::less(const MachineFunction &MF, const GCNRegPressure &O,
       // accounting for SGPR spills, prefer fewer SGPR spills.
       return SGPRDiff > 0;
     }
+  }
+
+  if (OnlyOccAndSpill) {
+    return false;
   }
 
   bool SGPRImportant = SGPROcc < VGPROcc;

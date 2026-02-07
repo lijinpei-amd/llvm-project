@@ -144,12 +144,14 @@ struct GCNRegPressure {
   /// precedence):
   /// 1. Better occupancy
   /// 2. Less spilling (first preference to VGPR spills, then to SGPR spills)
+  /// If \p OnlyOccAndSpill is false, the following factors are then compared:
   /// 3. Less tuple register pressure (first preference to VGPR tuples if we
   /// determine that SGPR pressure is not important)
   /// 4. Less raw register pressure (first preference to VGPR tuples if we
   /// determine that SGPR pressure is not important)
   bool less(const MachineFunction &MF, const GCNRegPressure &O,
-            unsigned MaxOccupancy = std::numeric_limits<unsigned>::max()) const;
+            unsigned MaxOccupancy = std::numeric_limits<unsigned>::max(),
+            bool OnlyOccAndSpill = false) const;
 
   bool operator==(const GCNRegPressure &O) const { return Value == O.Value; }
 
