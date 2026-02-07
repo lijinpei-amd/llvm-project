@@ -3179,10 +3179,26 @@ SUnit *SchedBoundary::pickOnlyChoice() {
     }
     ++I;
   }
-  for (unsigned i = 0; Available.empty(); ++i) {
-//  FIXME: Re-enable assert once PR20057 is resolved.
-//    assert(i <= (HazardRec->getMaxLookAhead() + MaxObservedStall) &&
-//           "permanent hazard");
+  auto ContRelease = [&]() -> bool {
+    if (Available.empty()) {
+      return true;
+    }
+    unsigned MinAvailableCycle = std::numeric_limits<unsigned>::max();
+    if (isTop()) {
+      for (auto &SU : Available) {
+        MinAvailableCycle = std::min(SU->TopReadyCycle, MinAvailableCycle);
+      }
+    } else {
+      for (auto &SU : Available) {
+        MinAvailableCycle = std::min(SU->BotReadyCycle, MinAvailableCycle);
+      }
+    }
+    return MinAvailableCycle > CurrCycle;
+  };
+  for (unsigned i = 0; ContRelease(); ++i) {
+    //  FIXME: Re-enable assert once PR20057 is resolved.
+    //    assert(i <= (HazardRec->getMaxLookAhead() + MaxObservedStall) &&
+    //           "permanent hazard");
     (void)i;
     bumpCycle(CurrCycle + 1);
     releasePending();
