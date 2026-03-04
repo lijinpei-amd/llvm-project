@@ -466,10 +466,12 @@ SUnit *GCNSchedStrategy::pickNodeBidirectional(bool &IsTopNode,
   // efficient, but also provides the best heuristics for CriticalPSets.
   if (SUnit *SU = pickOnlyChoice(Bot, SchedModel)) {
     IsTopNode = false;
+    tracePick(Only1, /*IsTopNode=*/false);
     return SU;
   }
   if (SUnit *SU = pickOnlyChoice(Top, SchedModel)) {
     IsTopNode = true;
+    tracePick(Only1, /*IsTopNode=*/true);
     return SU;
   }
   // Set the bottom-up policy based on the state of the current bottom zone
@@ -552,6 +554,7 @@ SUnit *GCNSchedStrategy::pickNodeBidirectional(bool &IsTopNode,
   LLVM_DEBUG(dbgs() << "Picking: "; traceCandidate(Cand););
 
   IsTopNode = Cand.AtTop;
+  tracePick(Cand);
   return Cand.SU;
 }
 
@@ -565,36 +568,41 @@ SUnit *GCNSchedStrategy::pickNode(bool &IsTopNode) {
   }
   bool PickedPending;
   SUnit *SU;
-  do {
-    PickedPending = false;
-    if (RegionPolicy.OnlyTopDown) {
-      SU = pickOnlyChoice(Top, SchedModel);
-      if (!SU) {
-        CandPolicy NoPolicy;
-        TopCand.reset(NoPolicy);
-        pickNodeFromQueue(Top, NoPolicy, DAG->getTopRPTracker(), TopCand,
-                          PickedPending,
-                          /*IsBottomUp=*/false);
-        assert(TopCand.Reason != NoCand && "failed to find a candidate");
-        SU = TopCand.SU;
-      }
-      IsTopNode = true;
-    } else if (RegionPolicy.OnlyBottomUp) {
-      SU = pickOnlyChoice(Bot, SchedModel);
-      if (!SU) {
-        CandPolicy NoPolicy;
-        BotCand.reset(NoPolicy);
-        pickNodeFromQueue(Bot, NoPolicy, DAG->getBotRPTracker(), BotCand,
-                          PickedPending,
-                          /*IsBottomUp=*/true);
-        assert(BotCand.Reason != NoCand && "failed to find a candidate");
-        SU = BotCand.SU;
-      }
-      IsTopNode = false;
+  PickedPending = false;
+  if (RegionPolicy.OnlyTopDown) {
+    SU = pickOnlyChoice(Top, SchedModel);
+    if (SU) {
+      tracePick(Only1, /*IsTopNode=*/true, /*IsPostRA=*/false);
     } else {
-      SU = pickNodeBidirectional(IsTopNode, PickedPending);
+      CandPolicy NoPolicy;
+      TopCand.reset(NoPolicy);
+      pickNodeFromQueue(Top, NoPolicy, DAG->getTopRPTracker(), TopCand,
+                        PickedPending,
+                        /*IsBottomUp=*/false);
+      assert(TopCand.Reason != NoCand && "failed to find a candidate");
+      tracePick(TopCand);
+      SU = TopCand.SU;
     }
-  } while (SU->isScheduled);
+    IsTopNode = true;
+  } else if (RegionPolicy.OnlyBottomUp) {
+    SU = pickOnlyChoice(Bot, SchedModel);
+    if (SU) {
+      tracePick(Only1, /*IsTopNode=*/false, /*IsPostRA=*/false);
+    } else {
+      CandPolicy NoPolicy;
+      BotCand.reset(NoPolicy);
+      pickNodeFromQueue(Bot, NoPolicy, DAG->getBotRPTracker(), BotCand,
+                        PickedPending,
+                        /*IsBottomUp=*/true);
+      assert(BotCand.Reason != NoCand && "failed to find a candidate");
+      tracePick(TopCand);
+      SU = BotCand.SU;
+    }
+    IsTopNode = false;
+  } else {
+    SU = pickNodeBidirectional(IsTopNode, PickedPending);
+  }
+  assert(!SU->isScheduled && "SUnit scheduled twice.");
 
   if (PickedPending) {
     unsigned ReadyCycle = IsTopNode ? SU->TopReadyCycle : SU->BotReadyCycle;
@@ -720,7 +728,7 @@ bool GCNMaxILPSchedStrategy::tryCandidate(SchedCandidate &Cand,
                                           SchedBoundary *Zone) const {
   // Initialize the candidate if needed.
   if (!Cand.isValid()) {
-    TryCand.Reason = NodeOrder;
+    TryCand.Reason = FirstValid;
     return true;
   }
 
@@ -796,8 +804,10 @@ bool GCNMaxILPSchedStrategy::tryCandidate(SchedCandidate &Cand,
         (!Zone->isTop() && TryCand.SU->NodeNum > Cand.SU->NodeNum)) {
       TryCand.Reason = NodeOrder;
       return true;
-    }
+    } else
+      Cand.Reason = NodeOrder;
   }
+  Cand.Reason = FirstValid;
   return false;
 }
 
@@ -822,7 +832,7 @@ bool GCNMaxMemoryClauseSchedStrategy::tryCandidate(SchedCandidate &Cand,
                                                    SchedBoundary *Zone) const {
   // Initialize the candidate if needed.
   if (!Cand.isValid()) {
-    TryCand.Reason = NodeOrder;
+    TryCand.Reason = FirstValid;
     return true;
   }
 
@@ -929,9 +939,13 @@ bool GCNMaxMemoryClauseSchedStrategy::tryCandidate(SchedCandidate &Cand,
       assert(TryCand.SU->NodeNum != Cand.SU->NodeNum);
       TryCand.Reason = NodeOrder;
       return true;
+    } else {
+      Cand.Reason = NodeOrder;
+      return false;
     }
   }
 
+  Cand.Reason = FirstValid;
   return false;
 }
 
