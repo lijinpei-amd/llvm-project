@@ -154,7 +154,7 @@ public:
 
 /// The goal of this scheduling strategy is to maximize kernel occupancy (i.e.
 /// maximum number of waves per simd).
-class GCNMaxOccupancySchedStrategy final : public GCNSchedStrategy {
+class GCNMaxOccupancySchedStrategy : public GCNSchedStrategy {
 public:
   GCNMaxOccupancySchedStrategy(const MachineSchedContext *C,
                                bool IsLegacyScheduler = false);
@@ -180,6 +180,54 @@ protected:
 
 public:
   GCNMaxMemoryClauseSchedStrategy(const MachineSchedContext *C);
+};
+
+class GCNPreRACriticalResource final : public GCNMaxOccupancySchedStrategy {
+protected:
+  bool TrackRemCriticalRes;
+
+  unsigned RemCriticalRes;
+
+  bool tryCandidate(SchedCandidate &Cand, SchedCandidate &TryCand,
+                    SchedBoundary *Zone) const override;
+
+  void updateRemainderCriticalRes();
+
+  void initialize(ScheduleDAGMI *DAG) override;
+
+  void schedNode(SUnit *SU, bool IsTopNode) override;
+
+public:
+  GCNPreRACriticalResource(const MachineSchedContext *C,
+                           bool IsLegacyScheduler = false)
+      : GCNMaxOccupancySchedStrategy(C, IsLegacyScheduler) {}
+
+  void setTrackRemainderCriticalRes(const GCNSubtarget &ST, bool B) {
+    TrackRemCriticalRes = B && ST.hasGFX940Insts();
+  }
+};
+
+class GCNPostRACriticalResource final : public PostGenericScheduler {
+protected:
+  bool TrackRemCriticalRes;
+
+  unsigned RemCriticalRes;
+
+  bool tryCandidate(SchedCandidate &Cand, SchedCandidate &TryCand) override;
+
+  void updateRemainderCriticalRes();
+
+  void initialize(ScheduleDAGMI *Dag) override;
+
+  void schedNode(SUnit *SU, bool IsTopNode) override;
+
+public:
+  GCNPostRACriticalResource(const MachineSchedContext *C)
+      : PostGenericScheduler(C) {}
+
+  void setTrackRemainderCriticalRes(const GCNSubtarget &ST, bool B) {
+    TrackRemCriticalRes = B && ST.hasGFX940Insts();
+  }
 };
 
 class ScheduleMetrics {
@@ -253,6 +301,8 @@ class GCNScheduleDAGMILive final : public ScheduleDAGMILive {
 
   SIMachineFunctionInfo &MFI;
 
+  unsigned CurrentRegionIdx = ~0U;
+
   // Occupancy target at the beginning of function scheduling cycle.
   unsigned StartingOccupancy;
 
@@ -320,6 +370,8 @@ public:
   void schedule() override;
 
   void finalizeSchedule() override;
+
+  bool hasIGLPInstrs() const { return RegionsWithIGLPInstrs[CurrentRegionIdx]; }
 };
 
 // GCNSchedStrategy applies multiple scheduling stages to a function.
@@ -797,6 +849,8 @@ public:
   GCNPostScheduleDAGMILive(MachineSchedContext *C,
                            std::unique_ptr<MachineSchedStrategy> S,
                            bool RemoveKillFlags);
+
+  bool hasIGLPInstrs() const { return HasIGLPInstrs; }
 };
 
 } // End namespace llvm
