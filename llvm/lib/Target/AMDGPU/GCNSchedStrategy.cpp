@@ -477,11 +477,11 @@ SUnit *GCNSchedStrategy::pickNodeBidirectional(bool &IsTopNode,
   // Set the bottom-up policy based on the state of the current bottom zone
   // and the instructions outside the zone, including the top zone.
   CandPolicy BotPolicy;
-  setPolicy(BotPolicy, /*IsPostRA=*/false, Bot, &Top);
+  setPolicy(BotPolicy, /*IsPostRA=*/false, Bot, &Top, true);
   // Set the top-down policy based on the state of the current top zone and
   // the instructions outside the zone, including the bottom zone.
   CandPolicy TopPolicy;
-  setPolicy(TopPolicy, /*IsPostRA=*/false, Top, &Bot);
+  setPolicy(TopPolicy, /*IsPostRA=*/false, Top, &Bot, true);
 
   bool BotPending = false;
   // See if BotCand is still valid (because we previously scheduled from Top).

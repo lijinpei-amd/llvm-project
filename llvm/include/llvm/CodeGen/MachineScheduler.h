@@ -1225,7 +1225,8 @@ protected:
   GenericSchedulerBase(const MachineSchedContext *C) : Context(C) {}
 
   LLVM_ABI void setPolicy(CandPolicy &Policy, bool IsPostRA,
-                          SchedBoundary &CurrZone, SchedBoundary *OtherZone);
+                          SchedBoundary &CurrZone, SchedBoundary *OtherZone,
+                          bool AlwaysUpdateResIdx = false);
 
   MachineSchedPolicy getPolicy() const override { return RegionPolicy; }
 

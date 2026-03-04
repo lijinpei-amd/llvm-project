@@ -3305,7 +3305,8 @@ bool GenericSchedulerBase::shouldReduceLatency(const CandPolicy &Policy,
 /// latencies inside and outside the zone.
 void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
                                      SchedBoundary &CurrZone,
-                                     SchedBoundary *OtherZone) {
+                                     SchedBoundary *OtherZone,
+                                     bool AlwaysUpdateResIdx) {
   // Apply preemptive heuristics based on the total latency and resources
   // inside and outside this zone. Potential stalls should be considered before
   // following this policy.
@@ -3338,7 +3339,7 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
                       << Rem.CriticalPath << "\n");
   }
   // If the same resource is limiting inside and outside the zone, do nothing.
-  if (CurrZone.getZoneCritResIdx() == OtherCritIdx)
+  if (!AlwaysUpdateResIdx && CurrZone.getZoneCritResIdx() == OtherCritIdx)
     return;
 
   LLVM_DEBUG(if (CurrZone.isResourceLimited()) {
@@ -3350,7 +3351,7 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
              if (!CurrZone.isResourceLimited() && !OtherResLimited) dbgs()
              << "  Latency limited both directions.\n");
 
-  if (CurrZone.isResourceLimited() && !Policy.ReduceResIdx)
+  if (CurrZone.isResourceLimited())
     Policy.ReduceResIdx = CurrZone.getZoneCritResIdx();
 
   if (OtherResLimited)
@@ -3964,31 +3965,6 @@ bool GenericScheduler::tryCandidate(SchedCandidate &Cand,
       return TryCand.Reason != NoCand;
   }
 
-  // Keep clustered nodes together to encourage downstream peephole
-  // optimizations which may reduce resource requirements.
-  //
-  // This is a best effort to set things up for a post-RA pass. Optimizations
-  // like generating loads of multiple registers should ideally be done within
-  // the scheduler pass by combining the loads during DAG postprocessing.
-  unsigned CandZoneCluster = Cand.AtTop ? TopClusterID : BotClusterID;
-  unsigned TryCandZoneCluster = TryCand.AtTop ? TopClusterID : BotClusterID;
-  bool CandIsClusterSucc =
-      isTheSameCluster(CandZoneCluster, Cand.SU->ParentClusterIdx);
-  bool TryCandIsClusterSucc =
-      isTheSameCluster(TryCandZoneCluster, TryCand.SU->ParentClusterIdx);
-
-  if (tryGreater(TryCandIsClusterSucc, CandIsClusterSucc, TryCand, Cand,
-                 Cluster))
-    return TryCand.Reason != NoCand;
-
-  if (SameBoundary) {
-    // Weak edges are for clustering and other constraints.
-    if (tryLess(getWeakLeft(TryCand.SU, TryCand.AtTop),
-                getWeakLeft(Cand.SU, Cand.AtTop),
-                TryCand, Cand, Weak))
-      return TryCand.Reason != NoCand;
-  }
-
   // Avoid increasing the max pressure of the entire region.
   if (DAG->isTrackingPressure() && tryPressure(TryCand.RPDelta.CurrentMax,
                                                Cand.RPDelta.CurrentMax,
@@ -4019,6 +3995,30 @@ bool GenericScheduler::tryCandidate(SchedCandidate &Cand,
       TryCand.Reason = NodeOrder;
       return true;
     }
+  }
+
+  // Keep clustered nodes together to encourage downstream peephole
+  // optimizations which may reduce resource requirements.
+  //
+  // This is a best effort to set things up for a post-RA pass. Optimizations
+  // like generating loads of multiple registers should ideally be done within
+  // the scheduler pass by combining the loads during DAG postprocessing.
+  unsigned CandZoneCluster = Cand.AtTop ? TopClusterID : BotClusterID;
+  unsigned TryCandZoneCluster = TryCand.AtTop ? TopClusterID : BotClusterID;
+  bool CandIsClusterSucc =
+      isTheSameCluster(CandZoneCluster, Cand.SU->ParentClusterIdx);
+  bool TryCandIsClusterSucc =
+      isTheSameCluster(TryCandZoneCluster, TryCand.SU->ParentClusterIdx);
+
+  if (tryGreater(TryCandIsClusterSucc, CandIsClusterSucc, TryCand, Cand,
+                 Cluster))
+    return TryCand.Reason != NoCand;
+
+  if (SameBoundary) {
+    // Weak edges are for clustering and other constraints.
+    if (tryLess(getWeakLeft(TryCand.SU, TryCand.AtTop),
+                getWeakLeft(Cand.SU, Cand.AtTop), TryCand, Cand, Weak))
+      return TryCand.Reason != NoCand;
   }
 
   return false;
@@ -4080,7 +4080,7 @@ SUnit *GenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
   LLVM_DEBUG(dbgs() << "Picking from Bot:\n");
   if (!BotCand.isValid() || BotCand.SU->isScheduled ||
       BotCand.Policy != BotPolicy) {
-    BotCand.reset(CandPolicy());
+    BotCand.reset(BotPolicy);
     pickNodeFromQueue(Bot, BotPolicy, DAG->getBotRPTracker(), BotCand);
     assert(BotCand.Reason != NoCand && "failed to find the first candidate");
   } else {
@@ -4088,7 +4088,7 @@ SUnit *GenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
 #ifndef NDEBUG
     if (VerifyScheduling) {
       SchedCandidate TCand;
-      TCand.reset(CandPolicy());
+      TCand.reset(BotPolicy);
       pickNodeFromQueue(Bot, BotPolicy, DAG->getBotRPTracker(), TCand);
       assert(TCand.SU == BotCand.SU &&
              "Last pick result should correspond to re-picking right now");
@@ -4100,7 +4100,7 @@ SUnit *GenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
   LLVM_DEBUG(dbgs() << "Picking from Top:\n");
   if (!TopCand.isValid() || TopCand.SU->isScheduled ||
       TopCand.Policy != TopPolicy) {
-    TopCand.reset(CandPolicy());
+    TopCand.reset(TopPolicy);
     pickNodeFromQueue(Top, TopPolicy, DAG->getTopRPTracker(), TopCand);
     assert(TopCand.Reason != NoCand && "failed to find the first candidate");
   } else {
@@ -4108,7 +4108,7 @@ SUnit *GenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
 #ifndef NDEBUG
     if (VerifyScheduling) {
       SchedCandidate TCand;
-      TCand.reset(CandPolicy());
+      TCand.reset(TopPolicy);
       pickNodeFromQueue(Top, TopPolicy, DAG->getTopRPTracker(), TCand);
       assert(TCand.SU == TopCand.SU &&
              "Last pick result should correspond to re-picking right now");
@@ -4367,6 +4367,15 @@ bool PostGenericScheduler::tryCandidate(SchedCandidate &Cand,
               Top.getLatencyStallCycles(Cand.SU), TryCand, Cand, Stall))
     return TryCand.Reason != NoCand;
 
+  // Avoid critical resource consumption and balance the schedule.
+  if (tryLess(TryCand.ResDelta.CritResources, Cand.ResDelta.CritResources,
+              TryCand, Cand, ResourceReduce))
+    return TryCand.Reason != NoCand;
+  if (tryGreater(TryCand.ResDelta.DemandedResources,
+                 Cand.ResDelta.DemandedResources, TryCand, Cand,
+                 ResourceDemand))
+    return TryCand.Reason != NoCand;
+
   // Keep clustered nodes together.
   unsigned CandZoneCluster = Cand.AtTop ? TopClusterID : BotClusterID;
   unsigned TryCandZoneCluster = TryCand.AtTop ? TopClusterID : BotClusterID;
@@ -4377,14 +4386,6 @@ bool PostGenericScheduler::tryCandidate(SchedCandidate &Cand,
 
   if (tryGreater(TryCandIsClusterSucc, CandIsClusterSucc, TryCand, Cand,
                  Cluster))
-    return TryCand.Reason != NoCand;
-  // Avoid critical resource consumption and balance the schedule.
-  if (tryLess(TryCand.ResDelta.CritResources, Cand.ResDelta.CritResources,
-              TryCand, Cand, ResourceReduce))
-    return TryCand.Reason != NoCand;
-  if (tryGreater(TryCand.ResDelta.DemandedResources,
-                 Cand.ResDelta.DemandedResources,
-                 TryCand, Cand, ResourceDemand))
     return TryCand.Reason != NoCand;
 
   // We only compare a subset of features when comparing nodes between
@@ -4450,7 +4451,7 @@ SUnit *PostGenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
   LLVM_DEBUG(dbgs() << "Picking from Bot:\n");
   if (!BotCand.isValid() || BotCand.SU->isScheduled ||
       BotCand.Policy != BotPolicy) {
-    BotCand.reset(CandPolicy());
+    BotCand.reset(BotPolicy);
     pickNodeFromQueue(Bot, BotCand);
     assert(BotCand.Reason != NoCand && "failed to find the first candidate");
   } else {
@@ -4458,7 +4459,7 @@ SUnit *PostGenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
 #ifndef NDEBUG
     if (VerifyScheduling) {
       SchedCandidate TCand;
-      TCand.reset(CandPolicy());
+      TCand.reset(BotPolicy);
       pickNodeFromQueue(Bot, BotCand);
       assert(TCand.SU == BotCand.SU &&
              "Last pick result should correspond to re-picking right now");
@@ -4470,7 +4471,7 @@ SUnit *PostGenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
   LLVM_DEBUG(dbgs() << "Picking from Top:\n");
   if (!TopCand.isValid() || TopCand.SU->isScheduled ||
       TopCand.Policy != TopPolicy) {
-    TopCand.reset(CandPolicy());
+    TopCand.reset(TopPolicy);
     pickNodeFromQueue(Top, TopCand);
     assert(TopCand.Reason != NoCand && "failed to find the first candidate");
   } else {
@@ -4478,7 +4479,7 @@ SUnit *PostGenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
 #ifndef NDEBUG
     if (VerifyScheduling) {
       SchedCandidate TCand;
-      TCand.reset(CandPolicy());
+      TCand.reset(TopPolicy);
       pickNodeFromQueue(Top, TopCand);
       assert(TCand.SU == TopCand.SU &&
              "Last pick result should correspond to re-picking right now");
