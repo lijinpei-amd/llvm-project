@@ -1900,6 +1900,18 @@ void GCNSchedStage::checkScheduling() {
       PressureAfter.getArchVGPRNum() > MaxArchVGPRs ||
       PressureAfter.getAGPRNum() > MaxArchVGPRs ||
       PressureAfter.getSGPRNum() > MaxSGPRs) {
+      if (PressureAfter.getVGPRNum(ST.hasGFX90AInsts()) > MaxVGPRs) {
+      llvm::errs() << "VGPR Pressure:" << PressureAfter.getVGPRNum(ST.hasGFX90AInsts()) << " " << MaxVGPRs << "\n";
+      }
+      if (PressureAfter.getArchVGPRNum() > MaxArchVGPRs) {
+      llvm::errs() << "ArchVGPR Pressure:" << PressureAfter.getArchVGPRNum() << " " << MaxArchVGPRs << "\n";
+      }
+      if (PressureAfter.getAGPRNum() > MaxArchVGPRs) {
+      llvm::errs() << "AGPR Pressure:" << PressureAfter.getAGPRNum() << " " << MaxArchVGPRs << "\n";
+      }
+      if (PressureAfter.getSGPRNum() > MaxSGPRs) {
+      llvm::errs() << "SGPR Pressure:" << PressureAfter.getSGPRNum() << " " << MaxSGPRs << "\n";
+      }
     DAG.RegionsWithHighRP[RegionIdx] = true;
     DAG.RegionsWithExcessRP[RegionIdx] = true;
   }

@@ -1065,6 +1065,17 @@ multiclass MAIInst<string OpName, string P, SDPatternOperator node = null_frag,
 
 
   let mayRaiseFPException = 0, ReadsModeReg = 1 in {
+      let Constraints = "$vdst = $src2",
+          Mnemonic = OpName in {
+        def "_mac_e64" : MAIInst<OpName # "_mac", ProfileAGPR,
+                                 !if(!eq(node, null_frag), null_frag, AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled>), Scaled>,
+                         MFMATable<1, "AGPR", NAME # "_e64", NAME # "_mac_e64">;
+
+        let OtherPredicates = [isGFX90APlus] in
+        def _mac_vgprcd_e64 : MAIInst<OpName # "_mac_vgprcd", ProfileVGPR,
+                                      !if(!eq(node, null_frag), null_frag, VgprMAIFrag<node, HasAbid, Scaled>), Scaled>,
+                              MFMATable<1, "VGPR", NAME # "_vgprcd_e64", NAME # "_mac_e64">;
+      }
     // FP32 denorm mode is respected, rounding mode is not. Exceptions are not supported.
     let Constraints = !if(NoDstOverlap, "@earlyclobber $vdst", "") in {
       def _e64 : MAIInst<OpName, ProfileAGPR,
@@ -1077,20 +1088,6 @@ multiclass MAIInst<string OpName, string P, SDPatternOperator node = null_frag,
                         MFMATable<0, "VGPR", NAME # "_vgprcd_e64", NAME # "_e64">;
     }
 
-    if NoDstOverlap then {
-      let Constraints = !if(NoDstOverlap, "$vdst = $src2", ""),
-          isConvertibleToThreeAddress = NoDstOverlap,
-          Mnemonic = OpName in {
-        def "_mac_e64" : MAIInst<OpName # "_mac", ProfileAGPR,
-                                 !if(!eq(node, null_frag), null_frag, AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled>), Scaled>,
-                         MFMATable<1, "AGPR", NAME # "_e64", NAME # "_mac_e64">;
-
-        let OtherPredicates = [isGFX90APlus] in
-        def _mac_vgprcd_e64 : MAIInst<OpName # "_mac_vgprcd", ProfileVGPR,
-                                      !if(!eq(node, null_frag), null_frag, VgprMAIFrag<node, HasAbid, Scaled>), Scaled>,
-                              MFMATable<1, "VGPR", NAME # "_vgprcd_e64", NAME # "_mac_e64">;
-      }
-    }
   } // mayRaiseFPException = 0, ReadsModeReg = 1
 }
 
@@ -1103,17 +1100,7 @@ multiclass ScaledMAIInst_mc<string OpName, string UnscaledOpName_, SDPatternOper
   defvar Profile = !cast<VOPProfileMAI>(!cast<MAIInst>(UnscaledOpName#"_e64").Pfl);
   defvar NoDstOverlap = Profile.NoDstOverlap;
 
-  def _e64 : ScaledMAIInst<OpName,
-        !cast<MAIInst>(UnscaledOpName#"_e64"), !if(NoDstOverlap, null_frag, AgprMAIFrag<node, Profile.DstVT, HasAbid, true>)>,
-      MFMATable<0, "AGPR", NAME # "_e64">;
-
-  def _vgprcd_e64 : ScaledMAIInst<OpName # "_vgprcd",
-          !cast<MAIInst>(UnscaledOpName#"_vgprcd_e64"), !if(NoDstOverlap, null_frag, VgprMAIFrag<node, HasAbid, true>)>,
-        MFMATable<0, "VGPR", NAME # "_vgprcd_e64", NAME # "_e64">;
-
- if NoDstOverlap then {
-   let Constraints = !if(NoDstOverlap, "$vdst = $src2", ""),
-       isConvertibleToThreeAddress = NoDstOverlap,
+   let Constraints = "$vdst = $src2",
        Mnemonic = UnscaledOpName_ in {
      def _mac_e64 : ScaledMAIInst<OpName # "_mac",
           !cast<MAIInst>(UnscaledOpName # "_mac_e64"), AgprMAIFrag<node, Profile.DstVT, HasAbid, true>>,
@@ -1123,7 +1110,15 @@ multiclass ScaledMAIInst_mc<string OpName, string UnscaledOpName_, SDPatternOper
           !cast<MAIInst>(UnscaledOpName # "_mac_vgprcd_e64"), VgprMAIFrag<node, HasAbid, true>>,
         MFMATable<1, "VGPR", NAME # "_vgprcd_e64", NAME # "_mac_e64">;
     }
-  }
+
+  def _e64 : ScaledMAIInst<OpName,
+        !cast<MAIInst>(UnscaledOpName#"_e64"), !if(NoDstOverlap, null_frag, AgprMAIFrag<node, Profile.DstVT, HasAbid, true>)>,
+      MFMATable<0, "AGPR", NAME # "_e64">;
+
+  def _vgprcd_e64 : ScaledMAIInst<OpName # "_vgprcd",
+          !cast<MAIInst>(UnscaledOpName#"_vgprcd_e64"), !if(NoDstOverlap, null_frag, VgprMAIFrag<node, HasAbid, true>)>,
+        MFMATable<0, "VGPR", NAME # "_vgprcd_e64", NAME # "_e64">;
+
 }
 
 // Each of SrcA and SrcB can be encoded using 3 different sizes, so

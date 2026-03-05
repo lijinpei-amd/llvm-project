@@ -3337,9 +3337,9 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
                       << CurrZone.getCurrCycle() << "c > CritPath "
                       << Rem.CriticalPath << "\n");
   }
-  // If the same resource is limiting inside and outside the zone, do nothing.
-  if (CurrZone.getZoneCritResIdx() == OtherCritIdx)
-    return;
+//  // If the same resource is limiting inside and outside the zone, do nothing.
+//  if (CurrZone.getZoneCritResIdx() == OtherCritIdx)
+//    return;
 
   LLVM_DEBUG(if (CurrZone.isResourceLimited()) {
     dbgs() << "  " << CurrZone.Available.getName() << " ResourceLimited: "
@@ -3350,8 +3350,8 @@ void GenericSchedulerBase::setPolicy(CandPolicy &Policy, bool IsPostRA,
              if (!CurrZone.isResourceLimited() && !OtherResLimited) dbgs()
              << "  Latency limited both directions.\n");
 
-  if (CurrZone.isResourceLimited() && !Policy.ReduceResIdx)
-    Policy.ReduceResIdx = CurrZone.getZoneCritResIdx();
+//  if (CurrZone.isResourceLimited() && !Policy.ReduceResIdx)
+//    Policy.ReduceResIdx = CurrZone.getZoneCritResIdx();
 
   if (OtherResLimited)
     Policy.DemandResIdx = OtherCritIdx;
@@ -3964,6 +3964,24 @@ bool GenericScheduler::tryCandidate(SchedCandidate &Cand,
       return TryCand.Reason != NoCand;
   }
 
+  if (SameBoundary) {
+    // Avoid critical resource consumption and balance the schedule.
+    TryCand.initResourceDelta(DAG, SchedModel);
+    if (tryLess(TryCand.ResDelta.CritResources, Cand.ResDelta.CritResources,
+                TryCand, Cand, ResourceReduce))
+      return TryCand.Reason != NoCand;
+    if (tryGreater(TryCand.ResDelta.DemandedResources,
+                   Cand.ResDelta.DemandedResources,
+                   TryCand, Cand, ResourceDemand))
+      return TryCand.Reason != NoCand;
+
+    // Avoid serializing long latency dependence chains.
+    // For acyclic path limited loops, latency was already checked above.
+    if (!RegionPolicy.DisableLatencyHeuristic && TryCand.Policy.ReduceLatency &&
+        !Rem.IsAcyclicLatencyLimited && tryLatency(TryCand, Cand, *Zone))
+      return TryCand.Reason != NoCand;
+  }
+
   // Keep clustered nodes together to encourage downstream peephole
   // optimizations which may reduce resource requirements.
   //
@@ -3997,22 +4015,6 @@ bool GenericScheduler::tryCandidate(SchedCandidate &Cand,
     return TryCand.Reason != NoCand;
 
   if (SameBoundary) {
-    // Avoid critical resource consumption and balance the schedule.
-    TryCand.initResourceDelta(DAG, SchedModel);
-    if (tryLess(TryCand.ResDelta.CritResources, Cand.ResDelta.CritResources,
-                TryCand, Cand, ResourceReduce))
-      return TryCand.Reason != NoCand;
-    if (tryGreater(TryCand.ResDelta.DemandedResources,
-                   Cand.ResDelta.DemandedResources,
-                   TryCand, Cand, ResourceDemand))
-      return TryCand.Reason != NoCand;
-
-    // Avoid serializing long latency dependence chains.
-    // For acyclic path limited loops, latency was already checked above.
-    if (!RegionPolicy.DisableLatencyHeuristic && TryCand.Policy.ReduceLatency &&
-        !Rem.IsAcyclicLatencyLimited && tryLatency(TryCand, Cand, *Zone))
-      return TryCand.Reason != NoCand;
-
     // Fall through to original instruction order.
     if ((Zone->isTop() && TryCand.SU->NodeNum < Cand.SU->NodeNum)
         || (!Zone->isTop() && TryCand.SU->NodeNum > Cand.SU->NodeNum)) {
@@ -4020,7 +4022,6 @@ bool GenericScheduler::tryCandidate(SchedCandidate &Cand,
       return true;
     }
   }
-
   return false;
 }
 
@@ -4367,6 +4368,15 @@ bool PostGenericScheduler::tryCandidate(SchedCandidate &Cand,
               Top.getLatencyStallCycles(Cand.SU), TryCand, Cand, Stall))
     return TryCand.Reason != NoCand;
 
+  // Avoid critical resource consumption and balance the schedule.
+  if (tryLess(TryCand.ResDelta.CritResources, Cand.ResDelta.CritResources,
+              TryCand, Cand, ResourceReduce))
+    return TryCand.Reason != NoCand;
+  if (tryGreater(TryCand.ResDelta.DemandedResources,
+                 Cand.ResDelta.DemandedResources,
+                 TryCand, Cand, ResourceDemand))
+    return TryCand.Reason != NoCand;
+
   // Keep clustered nodes together.
   unsigned CandZoneCluster = Cand.AtTop ? TopClusterID : BotClusterID;
   unsigned TryCandZoneCluster = TryCand.AtTop ? TopClusterID : BotClusterID;
@@ -4377,14 +4387,6 @@ bool PostGenericScheduler::tryCandidate(SchedCandidate &Cand,
 
   if (tryGreater(TryCandIsClusterSucc, CandIsClusterSucc, TryCand, Cand,
                  Cluster))
-    return TryCand.Reason != NoCand;
-  // Avoid critical resource consumption and balance the schedule.
-  if (tryLess(TryCand.ResDelta.CritResources, Cand.ResDelta.CritResources,
-              TryCand, Cand, ResourceReduce))
-    return TryCand.Reason != NoCand;
-  if (tryGreater(TryCand.ResDelta.DemandedResources,
-                 Cand.ResDelta.DemandedResources,
-                 TryCand, Cand, ResourceDemand))
     return TryCand.Reason != NoCand;
 
   // We only compare a subset of features when comparing nodes between
@@ -4450,7 +4452,7 @@ SUnit *PostGenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
   LLVM_DEBUG(dbgs() << "Picking from Bot:\n");
   if (!BotCand.isValid() || BotCand.SU->isScheduled ||
       BotCand.Policy != BotPolicy) {
-    BotCand.reset(CandPolicy());
+    BotCand.reset(BotPolicy);
     pickNodeFromQueue(Bot, BotCand);
     assert(BotCand.Reason != NoCand && "failed to find the first candidate");
   } else {
@@ -4458,7 +4460,7 @@ SUnit *PostGenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
 #ifndef NDEBUG
     if (VerifyScheduling) {
       SchedCandidate TCand;
-      TCand.reset(CandPolicy());
+      TCand.reset(BotPolicy);
       pickNodeFromQueue(Bot, BotCand);
       assert(TCand.SU == BotCand.SU &&
              "Last pick result should correspond to re-picking right now");
@@ -4470,7 +4472,7 @@ SUnit *PostGenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
   LLVM_DEBUG(dbgs() << "Picking from Top:\n");
   if (!TopCand.isValid() || TopCand.SU->isScheduled ||
       TopCand.Policy != TopPolicy) {
-    TopCand.reset(CandPolicy());
+    TopCand.reset(TopPolicy);
     pickNodeFromQueue(Top, TopCand);
     assert(TopCand.Reason != NoCand && "failed to find the first candidate");
   } else {
@@ -4478,7 +4480,7 @@ SUnit *PostGenericScheduler::pickNodeBidirectional(bool &IsTopNode) {
 #ifndef NDEBUG
     if (VerifyScheduling) {
       SchedCandidate TCand;
-      TCand.reset(CandPolicy());
+      TCand.reset(TopPolicy);
       pickNodeFromQueue(Top, TopCand);
       assert(TCand.SU == TopCand.SU &&
              "Last pick result should correspond to re-picking right now");

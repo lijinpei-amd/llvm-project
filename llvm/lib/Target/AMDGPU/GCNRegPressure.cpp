@@ -164,8 +164,10 @@ bool GCNRegPressure::less(const MachineFunction &MF, const GCNRegPressure &O,
   const auto OtherOcc = std::min(OtherSGPROcc, OtherVGPROcc);
 
   // Give first precedence to the better occupancy.
-  if (Occ != OtherOcc)
+  if (Occ != OtherOcc) {
+    llvm::errs() << "pressure compare occupancy\n";
     return Occ > OtherOcc;
+  }
 
   unsigned MaxVGPRs = ST.getMaxNumVGPRs(MF);
 
@@ -188,8 +190,10 @@ bool GCNRegPressure::less(const MachineFunction &MF, const GCNRegPressure &O,
 
     int SGPRDiff = OtherExcess.SGPR - Excess.SGPR;
 
-    if (VGPRDiff != 0)
+    if (VGPRDiff != 0) {
+      llvm::errs() << "pressure compare VGPRDiff\n";
       return VGPRDiff > 0;
+    }
     if (SGPRDiff != 0) {
       unsigned PureExcessVGPR =
           std::max(static_cast<int>(getVGPRNum(ST.hasGFX90AInsts()) - MaxVGPRs),
@@ -204,10 +208,13 @@ bool GCNRegPressure::less(const MachineFunction &MF, const GCNRegPressure &O,
       // If we have a special case where there is a tie in excess VGPR, but one
       // of the pressures has VGPR usage from SGPR spills, prefer the pressure
       // with SGPR spills.
-      if (PureExcessVGPR != OtherPureExcessVGPR)
+      if (PureExcessVGPR != OtherPureExcessVGPR) {
+        llvm::errs() << "pressure compare SGPRDiff-01\n";
         return SGPRDiff < 0;
+      }
       // If both pressures have the same excess pressure before and after
       // accounting for SGPR spills, prefer fewer SGPR spills.
+      llvm::errs() << "pressure compare SGPRDiff-02\n";
       return SGPRDiff > 0;
     }
   }
@@ -236,6 +243,9 @@ bool GCNRegPressure::less(const MachineFunction &MF, const GCNRegPressure &O,
     }
   }
 
+  //llvm::errs() << "final SGPRImportant: " << SGPRImportant << "\n";
+  //llvm::errs() << "this vgpr num: " << getVGPRNum(ST.hasGFX90AInsts()) << "\n";
+  //llvm::errs() << "other vgpr num: " << O.getVGPRNum(ST.hasGFX90AInsts()) << "\n";
   // Give final precedence to lower general RP.
   return SGPRImportant ? (getSGPRNum() < O.getSGPRNum()):
                          (getVGPRNum(ST.hasGFX90AInsts()) <
