@@ -798,6 +798,7 @@ static unsigned getResourceUseCount(unsigned ResId, const MCSchedClassDesc *SC,
 
 void GCNPreRACriticalResource::initialize(ScheduleDAGMI *DAG) {
   GCNMaxOccupancySchedStrategy::initialize(DAG);
+  ResDistMap.initialize(DAG);
   setTrackRemainderCriticalRes(
       Context->MF->getSubtarget<GCNSubtarget>(),
       !static_cast<GCNScheduleDAGMILive *>(DAG)->hasIGLPInstrs());
@@ -813,6 +814,7 @@ void GCNPreRACriticalResource::updateRemainderCriticalRes() {
 void GCNPreRACriticalResource::schedNode(SUnit *SU, bool IsTopNode) {
   GCNSchedStrategy::schedNode(SU, IsTopNode);
   updateRemainderCriticalRes();
+  ResDistMap.schedNode(SU);
 }
 
 bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
@@ -870,6 +872,11 @@ bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
                    getResourceUseCount(RemCriticalRes,
                                        DAG->getSchedClass(Cand.SU), SchedModel),
                    TryCand, Cand, ResourceDemand))
+      return TryCand.Reason != NoCand;
+
+    if (tryLess(ResDistMap.getSUnitRankForRes(TryCand.SU, RemCriticalRes),
+                ResDistMap.getSUnitRankForRes(Cand.SU, RemCriticalRes), TryCand,
+                Cand, ResourceDemand))
       return TryCand.Reason != NoCand;
   }
 
@@ -1185,6 +1192,11 @@ bool GCNPostRACriticalResource::tryCandidate(SchedCandidate &Cand,
                                        DAG->getSchedClass(Cand.SU), SchedModel),
                    TryCand, Cand, ResourceDemand))
       return TryCand.Reason != NoCand;
+
+    if (tryLess(ResDistMap.getSUnitRankForRes(TryCand.SU, RemCriticalRes),
+                ResDistMap.getSUnitRankForRes(Cand.SU, RemCriticalRes), TryCand,
+                Cand, ResourceDemand))
+      return TryCand.Reason != NoCand;
   }
 
   // Keep clustered nodes together.
@@ -1227,6 +1239,7 @@ bool GCNPostRACriticalResource::tryCandidate(SchedCandidate &Cand,
 
 void GCNPostRACriticalResource::initialize(ScheduleDAGMI *Dag) {
   PostGenericScheduler::initialize(Dag);
+  ResDistMap.initialize(DAG);
   setTrackRemainderCriticalRes(
       Context->MF->getSubtarget<GCNSubtarget>(),
       !static_cast<GCNPostScheduleDAGMILive *>(Dag)->hasIGLPInstrs());
@@ -1236,6 +1249,7 @@ void GCNPostRACriticalResource::initialize(ScheduleDAGMI *Dag) {
 void GCNPostRACriticalResource::schedNode(SUnit *SU, bool IsTopNode) {
   PostGenericScheduler::schedNode(SU, IsTopNode);
   updateRemainderCriticalRes();
+  ResDistMap.schedNode(SU);
 }
 
 GCNScheduleDAGMILive::GCNScheduleDAGMILive(

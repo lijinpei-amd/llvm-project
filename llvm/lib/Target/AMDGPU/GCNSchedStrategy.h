@@ -13,7 +13,9 @@
 #ifndef LLVM_LIB_TARGET_AMDGPU_GCNSCHEDSTRATEGY_H
 #define LLVM_LIB_TARGET_AMDGPU_GCNSCHEDSTRATEGY_H
 
+#include "AMDGPUResourceDistanceMap.h"
 #include "GCNRegPressure.h"
+
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -202,6 +204,8 @@ public:
 };
 
 class GCNPreRACriticalResource final : public GCNMaxOccupancySchedStrategy {
+  AMDGPU::ResourceDistanceMaps ResDistMap;
+
 protected:
   bool TrackRemCriticalRes;
 
@@ -227,6 +231,8 @@ public:
 };
 
 class GCNPostRACriticalResource final : public PostGenericScheduler {
+  AMDGPU::ResourceDistanceMaps ResDistMap;
+
 protected:
   bool TrackRemCriticalRes;
 
