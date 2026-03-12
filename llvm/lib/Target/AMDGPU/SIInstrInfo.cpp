@@ -13,12 +13,14 @@
 
 #include "SIInstrInfo.h"
 #include "AMDGPU.h"
+#include "AMDGPUCacheCapacityHazardRecognizer.h"
 #include "AMDGPUInstrInfo.h"
 #include "AMDGPULaneMaskUtils.h"
 #include "GCNHazardRecognizer.h"
 #include "GCNSubtarget.h"
 #include "SIMachineFunctionInfo.h"
 #include "Utils/AMDGPUBaseInfo.h"
+
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/GlobalISel/GenericMachineInstrs.h"
@@ -27,6 +29,7 @@
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineScheduler.h"
+#include "llvm/CodeGen/MultiHazardRecognizer.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/CodeGen/ScheduleDAG.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -61,6 +64,17 @@ static cl::opt<bool> Fix16BitCopies(
   cl::desc("Fix copies between 32 and 16 bit registers by extending to 32 bit"),
   cl::init(true),
   cl::ReallyHidden);
+
+static cl::opt<bool>
+    L1Hazard("amdgpu-l1-hazard", cl::init(false),
+             cl::desc("Enable hazard recognizer for L1 data cache."));
+
+static cl::opt<unsigned>
+    L1Bytes("amdgpu-l1-bytes", cl::init(32),
+            cl::desc("Per thread effective byte size of L1 data cache."));
+static cl::opt<unsigned> L1BytesPerCycle(
+    "amdgpu-l1-speed", cl::init(32),
+    cl::desc("Per thread effective bytes per cycle of L1 data cache."));
 
 SIInstrInfo::SIInstrInfo(const GCNSubtarget &ST)
     : AMDGPUGenInstrInfo(ST, RI, AMDGPU::ADJCALLSTACKUP,
@@ -9888,12 +9902,25 @@ SIInstrInfo::getSerializableTargetIndices() const {
   return ArrayRef(TargetIndices);
 }
 
+ScheduleHazardRecognizer *maybeCombineL1Hazard(ScheduleHazardRecognizer *HazRec,
+                                               const GCNSubtarget &ST) {
+  if (!L1Hazard) {
+    return HazRec;
+  }
+  auto *Res = new MultiHazardRecognizer();
+  Res->AddHazardRecognizer(std::unique_ptr<ScheduleHazardRecognizer>(HazRec));
+  Res->AddHazardRecognizer(
+      std::make_unique<AMDGPU::CacheCapacityHazardRecognizer>(
+          L1Bytes, L1BytesPerCycle, AMDGPU::getIsaVersion(ST.getCPU())));
+  return Res;
+}
+
 /// This is used by the post-RA scheduler (SchedulePostRAList.cpp).  The
 /// post-RA version of misched uses CreateTargetMIHazardRecognizer.
 ScheduleHazardRecognizer *
 SIInstrInfo::CreateTargetPostRAHazardRecognizer(const InstrItineraryData *II,
                                             const ScheduleDAG *DAG) const {
-  return new GCNHazardRecognizer(DAG->MF);
+  return maybeCombineL1Hazard(new GCNHazardRecognizer(DAG->MF), ST);
 }
 
 /// This is the hazard recognizer used at -O0 by the PostRAHazardRecognizer
@@ -9901,7 +9928,7 @@ SIInstrInfo::CreateTargetPostRAHazardRecognizer(const InstrItineraryData *II,
 ScheduleHazardRecognizer *
 SIInstrInfo::CreateTargetPostRAHazardRecognizer(const MachineFunction &MF,
                                                 MachineLoopInfo *MLI) const {
-  return new GCNHazardRecognizer(MF, MLI);
+  return maybeCombineL1Hazard(new GCNHazardRecognizer(MF, MLI), ST);
 }
 
 // Called during:
@@ -9914,8 +9941,9 @@ SIInstrInfo::CreateTargetMIHazardRecognizer(const InstrItineraryData *II,
   // post-RA scheduling; we can tell that we're post-RA because we don't
   // track VRegLiveness.
   if (!DAG->hasVRegLiveness())
-    return new GCNHazardRecognizer(DAG->MF);
-  return TargetInstrInfo::CreateTargetMIHazardRecognizer(II, DAG);
+    return maybeCombineL1Hazard(new GCNHazardRecognizer(DAG->MF), ST);
+  return maybeCombineL1Hazard(
+      TargetInstrInfo::CreateTargetMIHazardRecognizer(II, DAG), ST);
 }
 
 std::pair<unsigned, unsigned>
