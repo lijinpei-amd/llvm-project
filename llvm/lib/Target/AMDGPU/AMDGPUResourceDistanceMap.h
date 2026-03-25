@@ -9,6 +9,22 @@ class ScheduleDAGInstrs;
 namespace AMDGPU {
 
 class ResourceDistanceMaps {
+public:
+  struct SUDistRank {
+    int ToRoot;
+    int Dist;
+    SUDistRank(int ToRoot, int Dist = -1): ToRoot(ToRoot), Dist(Dist) {}
+    bool operator<(const SUDistRank& other) const {
+      if (ToRoot != other.ToRoot) {
+        return ToRoot < other.ToRoot;
+      }
+      return Dist > other.Dist;
+    }
+    bool operator>(const SUDistRank& other) const {
+      return other < *this;
+    }
+  };
+private:
   using DistMapTy = DenseMap<SUnit *, DenseMap<SUnit *, unsigned>>;
   struct ResourceRootInfo {
     /// Number of root SU that is predecessor of this root.
@@ -25,13 +41,13 @@ class ResourceDistanceMaps {
   struct ResourceInfo {
     DistMapTy DistMap;
     RootInfosTy RootInfos;
-    DenseMap<SUnit *, int> SURankCache;
+    DenseMap<SUnit *, SUDistRank> SURankCache;
 
     unsigned getOrderForRoot(SUnit *Root) const;
-    void sortRoots();
-    void schedNode(SUnit *SU);
-    int getSURank(SUnit *SU);
-    int getSURankImpl(SUnit *SU);
+    void sortRoots(ScheduleDAGInstrs *DAG);
+    void schedNode(SUnit *SU, unsigned CurrCycle, ScheduleDAGInstrs*DAG);
+    SUDistRank getSURank(SUnit *SU);
+    SUDistRank getSURankImpl(SUnit *SU);
     bool isRoot(SUnit *SU) const {
       return RootInfos.find(SU) != RootInfos.end();
     }
@@ -54,8 +70,8 @@ public:
     this->DAG = DAG;
     Maps.clear();
   }
-  int getSUnitRankForRes(SUnit *SU, unsigned ResourceID) const;
-  void schedNode(SUnit *SU);
+  SUDistRank getSUnitRankForRes(SUnit *SU, unsigned ResourceID) const;
+  void schedNode(SUnit *SU, unsigned CurrCycle);
 };
 
 } // namespace AMDGPU

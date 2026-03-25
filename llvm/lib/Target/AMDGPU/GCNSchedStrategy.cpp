@@ -684,8 +684,10 @@ countCriticalResourceInRemainder(const SchedRemainder &Rem,
   if (CriticalResIdx) {
     unsigned LatencyPath =
         Rem.IsAcyclicLatencyLimited ? Rem.CriticalPath : Rem.CyclicCritPath;
+    llvm::errs() << "countCriticalResourceInRemainder: " << LatencyPath << " " << SchedModel->getLatencyFactor() << " " << CriticalResCount << "\n";
     if (LatencyPath * SchedModel->getLatencyFactor() < CriticalResCount)
       return CriticalResIdx;
+    return CriticalResIdx;
   }
   return 0;
 }
@@ -809,12 +811,30 @@ void GCNPreRACriticalResource::updateRemainderCriticalRes() {
   RemCriticalRes = TrackRemCriticalRes
                        ? countCriticalResourceInRemainder(Rem, SchedModel)
                        : 0;
+		       llvm::errs() << "pre-ra RemCriticalRes: " << RemCriticalRes << "\n";
 }
 
 void GCNPreRACriticalResource::schedNode(SUnit *SU, bool IsTopNode) {
   GCNSchedStrategy::schedNode(SU, IsTopNode);
   updateRemainderCriticalRes();
-  ResDistMap.schedNode(SU);
+  ResDistMap.schedNode(SU, Top.getCurrCycle());
+}
+
+template <typename T>
+static bool tryLessGeneric(const T&TryVal, const T&CandVal,
+                   GenericSchedulerBase::SchedCandidate &TryCand,
+                   GenericSchedulerBase::SchedCandidate &Cand,
+                   GenericSchedulerBase::CandReason Reason) {
+  if (TryVal < CandVal) {
+    TryCand.Reason = Reason;
+    return true;
+  }
+  if (TryVal > CandVal) {
+    if (Cand.Reason > Reason)
+      Cand.Reason = Reason;
+    return true;
+  }
+  return false;
 }
 
 bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
@@ -850,12 +870,12 @@ bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
   // "tie-breaking" in nature.
   bool SameBoundary = Zone != nullptr;
   if (SameBoundary) {
-    // For loops that are acyclic path limited, aggressively schedule for
-    // latency. Within an single cycle, whenever CurrMOps > 0, allow normal
-    // heuristics to take precedence.
-    if (Rem.IsAcyclicLatencyLimited && !Zone->getCurrMOps() &&
-        tryLatency(TryCand, Cand, *Zone))
-      return TryCand.Reason != NoCand;
+//    // For loops that are acyclic path limited, aggressively schedule for
+//    // latency. Within an single cycle, whenever CurrMOps > 0, allow normal
+//    // heuristics to take precedence.
+//    if (Rem.IsAcyclicLatencyLimited && !Zone->getCurrMOps() &&
+//        tryLatency(TryCand, Cand, *Zone))
+//      return TryCand.Reason != NoCand;
 
     // Prioritize instructions that read unbuffered resources by stall cycles.
     if (tryLess(Zone->getLatencyStallCycles(TryCand.SU),
@@ -864,6 +884,7 @@ bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
   }
 
   if (RemCriticalRes) {
+  llvm::errs() << "try resource strategy\n";
 
     // Prioritize instructions that use critical resource
     if (tryGreater(getResourceUseCount(RemCriticalRes,
@@ -874,7 +895,14 @@ bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
                    TryCand, Cand, ResourceDemand))
       return TryCand.Reason != NoCand;
 
-    if (tryLess(ResDistMap.getSUnitRankForRes(TryCand.SU, RemCriticalRes),
+{
+  auto r1 = ResDistMap.getSUnitRankForRes(TryCand.SU, RemCriticalRes);
+  auto r2 = ResDistMap.getSUnitRankForRes(Cand.SU, RemCriticalRes);
+  llvm::errs() << "r1: " << r1.ToRoot << "@" << r1.Dist << " r2: " << r2.ToRoot << "@" << r2.Dist << "\n";
+  DAG->dumpNode(*TryCand.SU);
+  DAG->dumpNode(*Cand.SU);
+}
+    if (tryLessGeneric(ResDistMap.getSUnitRankForRes(TryCand.SU, RemCriticalRes),
                 ResDistMap.getSUnitRankForRes(Cand.SU, RemCriticalRes), TryCand,
                 Cand, ResourceDemand))
       return TryCand.Reason != NoCand;
@@ -1167,6 +1195,7 @@ void GCNPostRACriticalResource::updateRemainderCriticalRes() {
   RemCriticalRes = TrackRemCriticalRes
                        ? countCriticalResourceInRemainder(Rem, SchedModel)
                        : 0;
+		       llvm::errs() << "post-ra RemCriticalRes: " << RemCriticalRes << "\n";
 }
 
 bool GCNPostRACriticalResource::tryCandidate(SchedCandidate &Cand,
@@ -1183,6 +1212,7 @@ bool GCNPostRACriticalResource::tryCandidate(SchedCandidate &Cand,
     return TryCand.Reason != NoCand;
 
   if (RemCriticalRes) {
+  llvm::errs() << "try resource strategy\n";
 
     // Prioritize instructions that use critical resource
     if (tryGreater(getResourceUseCount(RemCriticalRes,
@@ -1193,7 +1223,14 @@ bool GCNPostRACriticalResource::tryCandidate(SchedCandidate &Cand,
                    TryCand, Cand, ResourceDemand))
       return TryCand.Reason != NoCand;
 
-    if (tryLess(ResDistMap.getSUnitRankForRes(TryCand.SU, RemCriticalRes),
+{
+  auto r1 = ResDistMap.getSUnitRankForRes(TryCand.SU, RemCriticalRes);
+  auto r2 = ResDistMap.getSUnitRankForRes(Cand.SU, RemCriticalRes);
+  llvm::errs() << "r1: " << r1.ToRoot << "@" << r1.Dist << " r2: " << r2.ToRoot << "@" << r2.Dist << "\n";
+  DAG->dumpNode(*TryCand.SU);
+  DAG->dumpNode(*Cand.SU);
+}
+    if (tryLessGeneric(ResDistMap.getSUnitRankForRes(TryCand.SU, RemCriticalRes),
                 ResDistMap.getSUnitRankForRes(Cand.SU, RemCriticalRes), TryCand,
                 Cand, ResourceDemand))
       return TryCand.Reason != NoCand;
@@ -1249,7 +1286,7 @@ void GCNPostRACriticalResource::initialize(ScheduleDAGMI *Dag) {
 void GCNPostRACriticalResource::schedNode(SUnit *SU, bool IsTopNode) {
   PostGenericScheduler::schedNode(SU, IsTopNode);
   updateRemainderCriticalRes();
-  ResDistMap.schedNode(SU);
+  ResDistMap.schedNode(SU, Top.getCurrCycle());
 }
 
 GCNScheduleDAGMILive::GCNScheduleDAGMILive(
@@ -2350,6 +2387,7 @@ bool GCNSchedStage::shouldRevertScheduling(unsigned WavesAfter) {
 }
 
 bool OccInitialScheduleStage::shouldRevertScheduling(unsigned WavesAfter) {
+  return false;
   if (PressureAfter == PressureBefore)
     return false;
 
@@ -2363,6 +2401,7 @@ bool OccInitialScheduleStage::shouldRevertScheduling(unsigned WavesAfter) {
 }
 
 bool UnclusteredHighRPStage::shouldRevertScheduling(unsigned WavesAfter) {
+return false;
   // If RP is not reduced in the unclustered reschedule stage, revert to the
   // old schedule.
   if ((WavesAfter <=

@@ -227,6 +227,7 @@ public:
 
   void setTrackRemainderCriticalRes(const GCNSubtarget &ST, bool B) {
     TrackRemCriticalRes = B && ST.hasGFX940Insts();
+    llvm::errs() << "pre-ra track: " << TrackRemCriticalRes << "\n";
   }
 };
 
@@ -252,6 +253,7 @@ public:
 
   void setTrackRemainderCriticalRes(const GCNSubtarget &ST, bool B) {
     TrackRemCriticalRes = B && ST.hasGFX940Insts();
+    llvm::errs() << "post-ra track: " << TrackRemCriticalRes << "\n";
   }
 };
 

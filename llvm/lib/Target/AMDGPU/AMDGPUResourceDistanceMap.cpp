@@ -37,6 +37,9 @@ class ResourceDistanceMapBuilder {
     while (!WorkList.empty()) {
       auto *SU = WorkList.pop_back_val();
       for (auto &Pred : SU->Preds) {
+        if (Pred.isArtificial() || Pred.isWeak()) {
+	  continue;
+	}
         auto *PredSU = Pred.getSUnit();
         auto [Iter, Inserted] = SuccsLeft.try_emplace(PredSU, 0);
         if (Inserted && !isRoot(PredSU))
@@ -54,6 +57,9 @@ class ResourceDistanceMapBuilder {
       auto *SU = WorkList.front();
       WorkList.pop_front();
       for (auto &Pred : SU->Preds) {
+        if (Pred.isArtificial() || Pred.isWeak()) {
+	  continue;
+	}
         auto *PredSU = Pred.getSUnit();
         if (--SuccsLeft[PredSU] == 0) {
           buildDistanceMapForNode(PredSU);
@@ -66,11 +72,14 @@ class ResourceDistanceMapBuilder {
   void buildDistanceMapForNode(SUnit *SU) {
     auto &Succs = DistMap[SU];
     for (auto &Succ : SU->Succs) {
+      if (Succ.isArtificial() || Succ.isWeak()) {
+        continue;
+      }
       auto *SuccSU = Succ.getSUnit();
       if (isRoot(SuccSU)) {
         // Don't populate second-order roots.
         auto &CurrDist = Succs[SuccSU];
-        CurrDist = std::max(SU->Latency + Succ.getLatency(), CurrDist);
+        CurrDist = std::max(Succ.getLatency(), CurrDist);
       } else {
         auto *SuccSU = Succ.getSUnit();
         // Don't trigger a re-hash.
@@ -78,7 +87,7 @@ class ResourceDistanceMapBuilder {
           for (auto [SuccRoot, RootDist] : SuccDists->second) {
             auto &CurrDist = Succs[SuccRoot];
             CurrDist =
-                std::max(SU->Latency + Succ.getLatency() + RootDist, CurrDist);
+                std::max(Succ.getLatency() + RootDist, CurrDist);
           }
       }
     }
@@ -105,6 +114,16 @@ class ResourceDistanceMapBuilder {
     }
   }
 
+  void dumpDistMap(ScheduleDAGInstrs* DAG) {
+    for (const auto& kv: DistMap) {
+      llvm::errs() << "from node: ";
+      DAG->dumpNode(*kv.first);
+      for (const auto& kv1: kv.second) {
+      llvm::errs() << "to node dis: " << kv1.second << "\n";
+      DAG->dumpNode(*kv1.first);
+      }
+    }
+  }
 public:
   ResourceDistanceMapBuilder(ScheduleDAGInstrs *DAG, unsigned ResourceID)
       : DAG(DAG), ResourceID(ResourceID) {}
@@ -113,9 +132,10 @@ public:
     getReachableNodes();
     buildDistanceMap();
     initializeRoots();
+    dumpDistMap(DAG);
     ResourceDistanceMaps::ResourceInfo Res(std::move(DistMap),
                                            std::move(RootInfos));
-    Res.sortRoots();
+    Res.sortRoots(DAG);
     return Res;
   }
 };
@@ -131,78 +151,99 @@ ResourceDistanceMaps::ResourceInfo::getOrderForRoot(SUnit *Root) const {
   return Iter->second.Order;
 }
 
-void ResourceDistanceMaps::ResourceInfo::sortRoots() {
-  SmallVector<SUnit *> AvailableRoots;
-  for (auto &RootInfo : RootInfos)
-    if (RootInfo.second.PredRootsLeft == 0) {
-      AvailableRoots.push_back(RootInfo.first);
+void ResourceDistanceMaps::ResourceInfo::sortRoots(ScheduleDAGInstrs *DAG) {
+  llvm::errs() << "sortRoots\n";
+  SmallVector<std::pair<SUnit*, ResourceRootInfo>*> AvailableRoots;
+  for (auto &RootInfo : RootInfos) {
+  DAG->dumpNode(*RootInfo.first);
+  llvm::errs() << "PredRootsLeft: " << RootInfo.second.PredRootsLeft << "\n";
+    if (RootInfo.second.PredRootsLeft == 0 && !RootInfo.first->isScheduled) {
+      AvailableRoots.push_back(&RootInfo);
     } else {
       RootInfo.second.Order = std::numeric_limits<unsigned>::max();
     }
-  auto Comp = [&](SUnit *LHS, SUnit *RHS) {
-    if (LHS->TopReadyCycle != RHS->TopReadyCycle)
-      return LHS->TopReadyCycle < RHS->TopReadyCycle;
-    return LHS->NodeNum < RHS->NodeNum;
+    }
+  auto Comp = [&](const std::pair<SUnit*, ResourceRootInfo> *LHS, const std::pair<SUnit*, ResourceRootInfo>*RHS) {
+    auto LHSCycle = LHS->second.TopReadyCycle;
+    auto RHSCycle = RHS->second.TopReadyCycle;
+    if (LHSCycle != RHSCycle) {
+      return LHSCycle < RHSCycle;
+    }
+    return LHS->first->NodeNum < RHS->first->NodeNum;
   };
   sort(AvailableRoots, Comp);
-  for (auto [Idx, SU] : enumerate(AvailableRoots)) {
-    RootInfos[SU].Order = Idx;
+  llvm::errs() << "roots:\n";
+  for (auto [Idx, KV] : enumerate(AvailableRoots)) {
+    KV->second.Order = Idx;
+    llvm::errs() << "ready cycle: " << KV->second.TopReadyCycle << "\n";
+    DAG->dumpNode(*KV->first);
   }
   SURankCache.clear();
 }
 
-void ResourceDistanceMaps::ResourceInfo::schedNode(SUnit *SU) {
-  auto Iter = DistMap.find(SU);
+void ResourceDistanceMaps::ResourceInfo::schedNode(SUnit *SU0, unsigned CurrCycle, ScheduleDAGInstrs* DAG) {
+  auto Iter = DistMap.find(SU0);
   if (Iter == DistMap.end()) {
     return;
   }
-  bool IsRoot = isRoot(SU);
   bool Changed = false;
+  bool IsRoot = isRoot(SU0);
+    if (IsRoot) {
   for (auto [RootSU, Dist] : Iter->second) {
     auto &RootInfo = RootInfos[RootSU];
-    if (IsRoot) {
+    llvm::errs() << "from root to root:\n";
+    DAG->dumpNode(*SU0);
+    DAG->dumpNode(*RootSU);
       --RootInfo.PredRootsLeft;
       Changed = true;
     }
-    unsigned NewCycle = SU->TopReadyCycle + Dist;
+    }
+  for (const auto& [SU, ToRoots]: DistMap) {
+    unsigned RefCycle = SU->isScheduled ? SU->TopReadyCycle : CurrCycle + 1;
+    for (auto [RootSU, Dist] : ToRoots) {
+    auto &RootInfo = RootInfos[RootSU];
+    unsigned NewCycle = RefCycle+ Dist;
     if (NewCycle > RootInfo.TopReadyCycle) {
       RootInfo.TopReadyCycle = NewCycle;
       Changed = true;
     }
+    }
   }
   if (Changed) {
-    sortRoots();
+    sortRoots(DAG);
   }
 }
 
-int ResourceDistanceMaps::ResourceInfo::getSURank(SUnit *SU) {
+ResourceDistanceMaps::SUDistRank ResourceDistanceMaps::ResourceInfo::getSURank(SUnit *SU) {
   auto Iter = SURankCache.find(SU);
   if (Iter != SURankCache.end()) {
     return Iter->second;
   }
   auto Res = getSURankImpl(SU);
-  SURankCache[SU] = Res;
+  SURankCache.try_emplace(SU, Res);
   return Res;
 }
 
-int ResourceDistanceMaps::ResourceInfo::getSURankImpl(SUnit *SU) {
+ResourceDistanceMaps::SUDistRank ResourceDistanceMaps::ResourceInfo::getSURankImpl(SUnit *SU) {
   // Prefer roots.
   if (isRoot(SU)) {
-    return -1;
+    return {-1};
   }
 
+  SUDistRank Res{std::numeric_limits<int>::max()};
   // Prefer nodes leading to roots.
-  int Res = std::numeric_limits<int>::max();
   auto Iter = DistMap.find(SU);
   if (Iter == DistMap.end()) {
     return Res;
   }
 
   // Prefer nodes leading to closer roots.
-  for (auto [Root, _] : Iter->second) {
+  for (auto [Root, Dist] : Iter->second) {
     auto &RootInfo = RootInfos[Root];
     if (RootInfo.PredRootsLeft == 0) {
-      Res = std::min(Res, int(RootInfo.Order));
+      SUDistRank NewRes{(int)RootInfo.Order, (int)Dist};
+      if (NewRes < Res)
+	Res = NewRes;
     }
   }
   return Res;
@@ -216,16 +257,16 @@ ResourceDistanceMaps::ensureResDistMap(unsigned ResourceID) {
   return Maps.try_emplace(ResourceID, build(DAG, ResourceID)).first->second;
 }
 
-int ResourceDistanceMaps::getSUnitRankForRes(SUnit *SU,
+ResourceDistanceMaps::SUDistRank ResourceDistanceMaps::getSUnitRankForRes(SUnit *SU,
                                              unsigned ResourceID) const {
   return const_cast<ResourceDistanceMaps *>(this)
       ->ensureResDistMap(ResourceID)
       .getSURank(SU);
 }
 
-void ResourceDistanceMaps::schedNode(SUnit *SU) {
+void ResourceDistanceMaps::schedNode(SUnit *SU, unsigned CurrCycle) {
   for (auto &[_, ResInfo] : Maps)
-    ResInfo.schedNode(SU);
+    ResInfo.schedNode(SU, CurrCycle, DAG);
 }
 
 } // namespace AMDGPU

@@ -164,7 +164,7 @@ multiclass SICommonWriteRes {
   let RetireOOO = 1 in { // llvm-mca specific flag
   def : HWWriteRes<WriteBranch,  [HWBranch], 8>;
   def : HWWriteRes<WriteExport,  [HWExport], 4>;
-  def : HWWriteRes<WriteLDS,     [HWLGKM],   5>; // Can be between 2 and 64
+  def : HWWriteRes<WriteLDS,     [HWLGKM],   1>; // Can be between 2 and 64
   def : HWWriteRes<WriteSALU,    [HWSALU],   1>;
   def : HWWriteRes<WriteSMEM,    [HWLGKM],   5>;
   def : HWWriteRes<WriteVMEM,    [HWVMEM],   80>;
@@ -184,8 +184,8 @@ multiclass SICommonWriteRes {
 
   let ReleaseAtCycles = [2] in
   def : HWWriteRes<Write2PassMAI,  [HWXDL], 2>;
-  let ReleaseAtCycles = [4] in
-  def : HWWriteRes<Write4PassMAI,  [HWXDL], 4>;
+  let ReleaseAtCycles = [3] in
+  def : HWWriteRes<Write4PassMAI,  [HWXDL], 3>;
   let ReleaseAtCycles = [8] in
   def : HWWriteRes<Write8PassMAI,  [HWXDL], 8>;
   let ReleaseAtCycles = [16] in
@@ -334,17 +334,17 @@ def : InstRW<[WriteCopy], (instrs COPY)>;
 def : InstRW<[Write64Bit], (instregex "^V_ACCVGPR_WRITE_B32_e64$")>;
 def : InstRW<[Write2PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_4X4X")>;
 
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X8X")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X16")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X32")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X64")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
+def : InstRW<[Write4PassMAI], (instregex "^V_MFMA_.32_16X16X8X")>;
+def : InstRW<[Write4PassMAI], (instregex "^V_MFMA_.32_16X16X16")>;
+def : InstRW<[Write4PassMAI], (instregex "^V_MFMA_.32_16X16X32")>;
+def : InstRW<[Write4PassMAI], (instregex "^V_MFMA_.32_16X16X64")>;
+def : InstRW<[Write8PassMAI], (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
 
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X4XF")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X8")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X16")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X32_")>;
-def : InstRW<[Write16PassMAI,  MIMFMARead], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
+def : InstRW<[Write8PassMAI], (instregex "^V_MFMA_.32_32X32X4XF")>;
+def : InstRW<[Write8PassMAI], (instregex "^V_MFMA_.32_32X32X8")>;
+def : InstRW<[Write8PassMAI], (instregex "^V_MFMA_.32_32X32X16")>;
+def : InstRW<[Write8PassMAI], (instregex "^V_MFMA_.32_32X32X32_")>;
+def : InstRW<[Write16PassMAI], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
 
 def : InstRW<[Write4PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_4X4X")>;
 def : InstRW<[Write16PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_16X16X")>;
