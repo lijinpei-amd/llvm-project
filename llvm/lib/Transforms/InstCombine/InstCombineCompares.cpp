@@ -2813,8 +2813,16 @@ Instruction *InstCombinerImpl::foldICmpDivConstant(ICmpInst &Cmp,
   // (x /u C2) <u C.  Simply casting the operands and result won't
   // work. :(  The if statement below tests that condition and bails
   // if it finds it.
-  if (!Cmp.isEquality() && DivIsSigned != Cmp.isSigned())
-    return nullptr;
+  // However, if the sdiv operands are both known non-negative, the sdiv
+  // is equivalent to udiv, so we can treat it as unsigned and proceed
+  // with an unsigned comparison.
+  if (!Cmp.isEquality() && DivIsSigned != Cmp.isSigned()) {
+    if (DivIsSigned && C2->isStrictlyPositive() &&
+        isKnownNonNegative(X, SQ.getWithInstruction(&Cmp)))
+      DivIsSigned = false;
+    else
+      return nullptr;
+  }
 
   // The ProdOV computation fails on divide by 0 and divide by -1. Cases with
   // INT_MIN will also fail if the divisor is 1. Although folds of all these
