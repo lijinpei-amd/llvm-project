@@ -122,7 +122,7 @@ def HWSALU   : ProcResource<1> {
   let BufferSize = 1;
 }
 def HWVMEM   : ProcResource<1> {
-  let BufferSize = 1;
+  let BufferSize = 0;
 }
 def HWVALU   : ProcResource<1> {
   let BufferSize = 1;
@@ -164,10 +164,12 @@ multiclass SICommonWriteRes {
   let RetireOOO = 1 in { // llvm-mca specific flag
   def : HWWriteRes<WriteBranch,  [HWBranch], 8>;
   def : HWWriteRes<WriteExport,  [HWExport], 4>;
-  def : HWWriteRes<WriteLDS,     [HWLGKM],   5>; // Can be between 2 and 64
+  let ReleaseAtCycles = [10] in 
+  def : HWWriteRes<WriteLDS,     [HWLGKM],   10>; // Can be between 2 and 64
   def : HWWriteRes<WriteSALU,    [HWSALU],   1>;
   def : HWWriteRes<WriteSMEM,    [HWLGKM],   5>;
-  def : HWWriteRes<WriteVMEM,    [HWVMEM],   80>;
+  let ReleaseAtCycles = [32] in 
+  def : HWWriteRes<WriteVMEM,    [HWVMEM],   32>;
   def : HWWriteRes<WriteBarrier, [HWBranch], 500>; // XXX: Guessed ???
 
   def : HWVALUWriteRes<Write32Bit,         1>;
@@ -184,8 +186,8 @@ multiclass SICommonWriteRes {
 
   let ReleaseAtCycles = [2] in
   def : HWWriteRes<Write2PassMAI,  [HWXDL], 2>;
-  let ReleaseAtCycles = [4] in
-  def : HWWriteRes<Write4PassMAI,  [HWXDL], 4>;
+  let ReleaseAtCycles = [3] in
+  def : HWWriteRes<Write4PassMAI,  [HWXDL], 3>;
   let ReleaseAtCycles = [8] in
   def : HWWriteRes<Write8PassMAI,  [HWXDL], 8>;
   let ReleaseAtCycles = [16] in

@@ -1082,21 +1082,8 @@ multiclass MAIInst<string OpName, string P, SDPatternOperator node = null_frag,
   defvar ProfileVGPR = !cast<VOPProfileMAI>("VOPProfileMAI_" # P # "_VCD");
 
 
-  let mayRaiseFPException = 0, ReadsModeReg = 1 in {
-    // FP32 denorm mode is respected, rounding mode is not. Exceptions are not supported.
-    let Constraints = !if(NoDstOverlap, "@earlyclobber $vdst", "") in {
-      def _e64 : MAIInst<OpName, ProfileAGPR,
-                         !if(!or(NoDstOverlap, !eq(node, null_frag)), null_frag, AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled>), Scaled>,
-                 MFMATable<0, "AGPR", NAME # "_e64">;
 
-      let OtherPredicates = [isGFX90APlus], Mnemonic = OpName in
-      def _vgprcd_e64 : MAIInst<OpName # "_vgprcd", ProfileVGPR,
-                                !if(!or(NoDstOverlap, !eq(node, null_frag)), null_frag, VgprMAIFrag<node, HasAbid, Scaled>), Scaled>,
-                        MFMATable<0, "VGPR", NAME # "_vgprcd_e64", NAME # "_e64">;
-    }
-
-    if NoDstOverlap then {
-      let Constraints = !if(NoDstOverlap, "$vdst = $src2", ""),
+      let Constraints = "$vdst = $src2",
           isConvertibleToThreeAddress = NoDstOverlap,
           Mnemonic = OpName in {
         def "_mac_e64" : MAIInst<OpName # "_mac", ProfileAGPR,
@@ -1108,6 +1095,18 @@ multiclass MAIInst<string OpName, string P, SDPatternOperator node = null_frag,
                                       !if(!eq(node, null_frag), null_frag, VgprMAIFrag<node, HasAbid, Scaled>), Scaled>,
                               MFMATable<1, "VGPR", NAME # "_vgprcd_e64", NAME # "_mac_e64">;
       }
+
+  let mayRaiseFPException = 0, ReadsModeReg = 1 in {
+    // FP32 denorm mode is respected, rounding mode is not. Exceptions are not supported.
+    let Constraints = !if(NoDstOverlap, "@earlyclobber $vdst", "") in {
+      def _e64 : MAIInst<OpName, ProfileAGPR,
+                         !if(!or(NoDstOverlap, !eq(node, null_frag)), null_frag, AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled>), Scaled>,
+                 MFMATable<0, "AGPR", NAME # "_e64">;
+
+      let OtherPredicates = [isGFX90APlus], Mnemonic = OpName in
+      def _vgprcd_e64 : MAIInst<OpName # "_vgprcd", ProfileVGPR,
+                                !if(!or(NoDstOverlap, !eq(node, null_frag)), null_frag, VgprMAIFrag<node, HasAbid, Scaled>), Scaled>,
+                        MFMATable<0, "VGPR", NAME # "_vgprcd_e64", NAME # "_e64">;
     }
   } // mayRaiseFPException = 0, ReadsModeReg = 1
 }
