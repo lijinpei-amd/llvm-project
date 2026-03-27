@@ -805,6 +805,9 @@ void GCNPreRACriticalResource::initialize(ScheduleDAGMI *DAG) {
       Context->MF->getSubtarget<GCNSubtarget>(),
       !static_cast<GCNScheduleDAGMILive *>(DAG)->hasIGLPInstrs());
   updateRemainderCriticalRes();
+  schedRoot = false;
+  rootOnly = true;
+  lastRootCycle = std::numeric_limits<unsigned>::max();
 }
 
 void GCNPreRACriticalResource::updateRemainderCriticalRes() {
@@ -812,12 +815,35 @@ void GCNPreRACriticalResource::updateRemainderCriticalRes() {
                        ? countCriticalResourceInRemainder(Rem, SchedModel)
                        : 0;
 		       llvm::errs() << "pre-ra RemCriticalRes: " << RemCriticalRes << "\n";
+		       RemCriticalRes = 7;
+}
+
+SUnit *GCNPreRACriticalResource::pickNode(bool &IsTopNode) {
+  rootOnly = true;
+  unsigned count = 0;
+  for (auto* SU1: Top.getAvailable().elements()) {
+    if (ResDistMap.isRoot(SU1)) {
+      count += 1;
+    }
+  }
+  for (auto* SU1: Top.getPending().elements()) {
+    if (ResDistMap.isRoot(SU1)) {
+      count += 1;
+    }
+  }
+  rootOnly = count <= 2;
+  llvm::errs() << "lastRootCycle: " << lastRootCycle << " rootOnly:" << rootOnly << "\n";
+  return GCNSchedStrategy::pickNode(IsTopNode);
 }
 
 void GCNPreRACriticalResource::schedNode(SUnit *SU, bool IsTopNode) {
   GCNSchedStrategy::schedNode(SU, IsTopNode);
   updateRemainderCriticalRes();
-  ResDistMap.schedNode(SU, Top.getCurrCycle());
+  schedRoot = ResDistMap.schedNode(SU, Top.getCurrCycle());
+  if (schedRoot) {
+    lastRootCycle = Top.getCurrCycle();
+  }
+  // rootOnly = lastRootCycle == std::numeric_limits<unsigned>::max() || (Top.getCurrCycle() - lastRootCycle >= 3);
 }
 
 template <typename T>
@@ -870,21 +896,24 @@ bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
   // "tie-breaking" in nature.
   bool SameBoundary = Zone != nullptr;
   if (SameBoundary) {
-//    // For loops that are acyclic path limited, aggressively schedule for
-//    // latency. Within an single cycle, whenever CurrMOps > 0, allow normal
-//    // heuristics to take precedence.
-//    if (Rem.IsAcyclicLatencyLimited && !Zone->getCurrMOps() &&
-//        tryLatency(TryCand, Cand, *Zone))
-//      return TryCand.Reason != NoCand;
-
+  llvm::errs() << "try latency\n";
+{
+  auto r1 = Zone->getLatencyStallCycles(TryCand.SU);
+  auto r2 = Zone->getLatencyStallCycles(Cand.SU);
+  llvm::errs() << "r1: " << r1 << " r2: " << r2 << "\n";
+  llvm::errs() << "unbuffer: " << TryCand.SU->isUnbuffered << " " << Cand.SU->isUnbuffered << "\n";
+  llvm::errs() << "cycle: " << TryCand.SU->TopReadyCycle << " " << Cand.SU->TopReadyCycle << " " << Zone->getCurrCycle() << "\n";
+  DAG->dumpNode(*TryCand.SU);
+  DAG->dumpNode(*Cand.SU);
+}
     // Prioritize instructions that read unbuffered resources by stall cycles.
     if (tryLess(Zone->getLatencyStallCycles(TryCand.SU),
                 Zone->getLatencyStallCycles(Cand.SU), TryCand, Cand, Stall))
       return TryCand.Reason != NoCand;
-  }
 
+auto 	RemCriticalRes = 7;
   if (RemCriticalRes) {
-  llvm::errs() << "try resource strategy\n";
+  llvm::errs() << "try resource strategy-01\n";
 
     // Prioritize instructions that use critical resource
     if (tryGreater(getResourceUseCount(RemCriticalRes,
@@ -894,7 +923,19 @@ bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
                                        DAG->getSchedClass(Cand.SU), SchedModel),
                    TryCand, Cand, ResourceDemand))
       return TryCand.Reason != NoCand;
+      }
 
+
+    // For loops that are acyclic path limited, aggressively schedule for
+    // latency. Within an single cycle, whenever CurrMOps > 0, allow normal
+    // heuristics to take precedence.
+    if (!rootOnly)
+    if (Rem.IsAcyclicLatencyLimited && !Zone->getCurrMOps() &&
+        tryLatency(TryCand, Cand, *Zone))
+      return TryCand.Reason != NoCand;
+
+  if (RemCriticalRes) {
+  llvm::errs() << "try resource strategy-02\n";
 {
   auto r1 = ResDistMap.getSUnitRankForRes(TryCand.SU, RemCriticalRes);
   auto r2 = ResDistMap.getSUnitRankForRes(Cand.SU, RemCriticalRes);
@@ -907,6 +948,10 @@ bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
                 Cand, ResourceDemand))
       return TryCand.Reason != NoCand;
   }
+  } else {
+  llvm::errs() << "latency-not-same-zone\n";
+  }
+
 
   // Keep clustered nodes together to encourage downstream peephole
   // optimizations which may reduce resource requirements.
@@ -1196,6 +1241,7 @@ void GCNPostRACriticalResource::updateRemainderCriticalRes() {
                        ? countCriticalResourceInRemainder(Rem, SchedModel)
                        : 0;
 		       llvm::errs() << "post-ra RemCriticalRes: " << RemCriticalRes << "\n";
+		       RemCriticalRes = 7;
 }
 
 bool GCNPostRACriticalResource::tryCandidate(SchedCandidate &Cand,
@@ -1211,6 +1257,7 @@ bool GCNPostRACriticalResource::tryCandidate(SchedCandidate &Cand,
               Top.getLatencyStallCycles(Cand.SU), TryCand, Cand, Stall))
     return TryCand.Reason != NoCand;
 
+auto	RemCriticalRes = 7;
   if (RemCriticalRes) {
   llvm::errs() << "try resource strategy\n";
 
@@ -1281,12 +1328,19 @@ void GCNPostRACriticalResource::initialize(ScheduleDAGMI *Dag) {
       Context->MF->getSubtarget<GCNSubtarget>(),
       !static_cast<GCNPostScheduleDAGMILive *>(Dag)->hasIGLPInstrs());
   updateRemainderCriticalRes();
+  schedRoot = false;
+  rootOnly = true;
+  lastRootCycle = std::numeric_limits<unsigned>::max();
 }
 
 void GCNPostRACriticalResource::schedNode(SUnit *SU, bool IsTopNode) {
   PostGenericScheduler::schedNode(SU, IsTopNode);
   updateRemainderCriticalRes();
-  ResDistMap.schedNode(SU, Top.getCurrCycle());
+  schedRoot = ResDistMap.schedNode(SU, Top.getCurrCycle());
+  if (schedRoot) {
+    lastRootCycle = Top.getCurrCycle();
+  }
+  rootOnly = lastRootCycle == std::numeric_limits<unsigned>::max() || (Top.getCurrCycle() - lastRootCycle >= 3);
 }
 
 GCNScheduleDAGMILive::GCNScheduleDAGMILive(

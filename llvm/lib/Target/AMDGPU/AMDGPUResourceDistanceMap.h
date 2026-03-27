@@ -45,7 +45,7 @@ private:
 
     unsigned getOrderForRoot(SUnit *Root) const;
     void sortRoots(ScheduleDAGInstrs *DAG);
-    void schedNode(SUnit *SU, unsigned CurrCycle, ScheduleDAGInstrs*DAG);
+    bool schedNode(SUnit *SU, unsigned CurrCycle, ScheduleDAGInstrs*DAG);
     SUDistRank getSURank(SUnit *SU);
     SUDistRank getSURankImpl(SUnit *SU);
     bool isRoot(SUnit *SU) const {
@@ -71,7 +71,15 @@ public:
     Maps.clear();
   }
   SUDistRank getSUnitRankForRes(SUnit *SU, unsigned ResourceID) const;
-  void schedNode(SUnit *SU, unsigned CurrCycle);
+  bool schedNode(SUnit *SU, unsigned CurrCycle);
+  bool isRoot(SUnit *SU) const {
+    for (const auto& kv: Maps) {
+      if (kv.second.isRoot(SU)) {
+        return true;
+      }
+    }
+    return false;
+  }
 };
 
 } // namespace AMDGPU

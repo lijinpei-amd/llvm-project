@@ -2838,7 +2838,7 @@ void SchedBoundary::releaseNode(SUnit *SU, unsigned ReadyCycle, bool InPQueue,
   if (!HazardDetected) {
     Available.push(SU);
     LLVM_DEBUG(dbgs().indent(2)
-               << "Move SU(" << SU->NodeNum << ") into Available Q\n");
+               << "Move SU(" << SU->NodeNum << ") into Available Q @" << SU->TopReadyCycle << "\n");
 
     if (InPQueue)
       Pending.remove(Pending.begin() + Idx);

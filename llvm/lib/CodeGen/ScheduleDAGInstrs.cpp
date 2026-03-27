@@ -624,6 +624,7 @@ void ScheduleDAGInstrs::initSUnits() {
         switch (SchedModel.getProcResource(PRE.ProcResourceIdx)->BufferSize) {
         case 0:
           SU->hasReservedResource = true;
+          SU->isUnbuffered = true;
           break;
         case 1:
           SU->isUnbuffered = true;

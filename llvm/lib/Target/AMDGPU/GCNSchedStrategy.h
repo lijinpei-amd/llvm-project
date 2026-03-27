@@ -210,6 +210,9 @@ protected:
   bool TrackRemCriticalRes;
 
   unsigned RemCriticalRes;
+  bool schedRoot;
+  unsigned lastRootCycle;
+  bool rootOnly;
 
   bool tryCandidate(SchedCandidate &Cand, SchedCandidate &TryCand,
                     SchedBoundary *Zone) const override;
@@ -219,6 +222,8 @@ protected:
   void initialize(ScheduleDAGMI *DAG) override;
 
   void schedNode(SUnit *SU, bool IsTopNode) override;
+
+  SUnit *pickNode(bool &IsTopNode) override;
 
 public:
   GCNPreRACriticalResource(const MachineSchedContext *C,
@@ -233,6 +238,9 @@ public:
 
 class GCNPostRACriticalResource final : public PostGenericScheduler {
   AMDGPU::ResourceDistanceMaps ResDistMap;
+  bool schedRoot;
+  unsigned lastRootCycle;
+  bool rootOnly;
 
 protected:
   bool TrackRemCriticalRes;

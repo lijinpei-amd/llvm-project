@@ -1086,6 +1086,13 @@ public:
   /// Dump the state of the information that tracks resource usage.
   LLVM_ABI void dumpReservedCycles() const;
   LLVM_ABI void dumpScheduledState() const;
+
+  ReadyQueue& getAvailable() {
+    return Available;
+  }
+  ReadyQueue& getPending() {
+    return Pending;
+  }
 };
 
 /// Base class for GenericScheduler. This class maintains information about

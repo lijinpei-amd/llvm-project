@@ -181,13 +181,19 @@ void ResourceDistanceMaps::ResourceInfo::sortRoots(ScheduleDAGInstrs *DAG) {
   SURankCache.clear();
 }
 
-void ResourceDistanceMaps::ResourceInfo::schedNode(SUnit *SU0, unsigned CurrCycle, ScheduleDAGInstrs* DAG) {
+bool ResourceDistanceMaps::ResourceInfo::schedNode(SUnit *SU0, unsigned CurrCycle, ScheduleDAGInstrs* DAG) {
+  bool IsRoot = isRoot(SU0);
+  llvm::errs() << "IsRoot: " << IsRoot << "\n";
+  DAG->dumpNode(*SU0);
+  llvm::errs() << "Roots: " << RootInfos.size() << "\n";
+  for (const auto& KV: RootInfos) {
+  DAG->dumpNode(*KV.first);
+  }
   auto Iter = DistMap.find(SU0);
   if (Iter == DistMap.end()) {
-    return;
+    return IsRoot;
   }
   bool Changed = false;
-  bool IsRoot = isRoot(SU0);
     if (IsRoot) {
   for (auto [RootSU, Dist] : Iter->second) {
     auto &RootInfo = RootInfos[RootSU];
@@ -212,6 +218,7 @@ void ResourceDistanceMaps::ResourceInfo::schedNode(SUnit *SU0, unsigned CurrCycl
   if (Changed) {
     sortRoots(DAG);
   }
+  return IsRoot;
 }
 
 ResourceDistanceMaps::SUDistRank ResourceDistanceMaps::ResourceInfo::getSURank(SUnit *SU) {
@@ -264,9 +271,11 @@ ResourceDistanceMaps::SUDistRank ResourceDistanceMaps::getSUnitRankForRes(SUnit 
       .getSURank(SU);
 }
 
-void ResourceDistanceMaps::schedNode(SUnit *SU, unsigned CurrCycle) {
+bool ResourceDistanceMaps::schedNode(SUnit *SU, unsigned CurrCycle) {
+        bool anyRoot = false;
   for (auto &[_, ResInfo] : Maps)
-    ResInfo.schedNode(SU, CurrCycle, DAG);
+    anyRoot |= ResInfo.schedNode(SU, CurrCycle, DAG);
+   return anyRoot;
 }
 
 } // namespace AMDGPU
