@@ -570,6 +570,7 @@ bool SIInstrInfo::shouldClusterMemOps(ArrayRef<const MachineOperand *> BaseOps1,
                                       int64_t Offset2, bool OffsetIsScalable2,
                                       unsigned ClusterSize,
                                       unsigned NumBytes) const {
+  return false;
   // If the mem ops (to be clustered) do not have the same base ptr, then they
   // should not be clustered
   unsigned MaxMemoryClusterDWords = DefaultMemoryClusterDWordsLimit;

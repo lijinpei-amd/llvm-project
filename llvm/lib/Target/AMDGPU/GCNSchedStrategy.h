@@ -13,7 +13,9 @@
 #ifndef LLVM_LIB_TARGET_AMDGPU_GCNSCHEDSTRATEGY_H
 #define LLVM_LIB_TARGET_AMDGPU_GCNSCHEDSTRATEGY_H
 
+#include "AMDGPUResourceDistanceMap.h"
 #include "GCNRegPressure.h"
+
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -201,11 +203,15 @@ public:
   GCNMaxMemoryClauseSchedStrategy(const MachineSchedContext *C);
 };
 
-class GCNPreRACriticalResource final : public GCNMaxOccupancySchedStrategy {
+class GCNPreRACriticalResource final : public GCNSchedStrategy {
+  AMDGPU::ResourceDistanceMaps ResDistMap;
+
 protected:
   bool TrackRemCriticalRes;
 
   unsigned RemCriticalRes;
+
+  std::optional<unsigned> PendingResInstrs;
 
   bool tryCandidate(SchedCandidate &Cand, SchedCandidate &TryCand,
                     SchedBoundary *Zone) const override;
@@ -216,10 +222,10 @@ protected:
 
   void schedNode(SUnit *SU, bool IsTopNode) override;
 
+  SUnit *pickNode(bool &IsTopNode) override;
+
 public:
-  GCNPreRACriticalResource(const MachineSchedContext *C,
-                           bool IsLegacyScheduler = false)
-      : GCNMaxOccupancySchedStrategy(C, IsLegacyScheduler) {}
+  GCNPreRACriticalResource(const MachineSchedContext *C);
 
   void setTrackRemainderCriticalRes(const GCNSubtarget &ST, bool B) {
     TrackRemCriticalRes = B && ST.hasGFX940Insts();
@@ -227,6 +233,8 @@ public:
 };
 
 class GCNPostRACriticalResource final : public PostGenericScheduler {
+  AMDGPU::ResourceDistanceMaps ResDistMap;
+
 protected:
   bool TrackRemCriticalRes;
 
@@ -322,6 +330,10 @@ class GCNScheduleDAGMILive final : public ScheduleDAGMILive {
 
   unsigned CurrentRegionIdx = ~0U;
 
+public:
+  void setCurrentRegionIdx(unsigned Idx) { CurrentRegionIdx = Idx; }
+
+private:
   // Occupancy target at the beginning of function scheduling cycle.
   unsigned StartingOccupancy;
 
