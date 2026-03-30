@@ -1388,6 +1388,7 @@ GCNTargetMachine::createPostMachineScheduler(MachineSchedContext *C) const {
     return createPostMachineSchedulerResource(C, getOptLevel());
   return createPostMachineSchedulerDefault(C, getOptLevel());
 }
+
 //===----------------------------------------------------------------------===//
 // AMDGPU Legacy Pass Setup
 //===----------------------------------------------------------------------===//
