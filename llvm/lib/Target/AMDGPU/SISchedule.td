@@ -164,7 +164,8 @@ multiclass SICommonWriteRes {
   let RetireOOO = 1 in { // llvm-mca specific flag
   def : HWWriteRes<WriteBranch,  [HWBranch], 8>;
   def : HWWriteRes<WriteExport,  [HWExport], 4>;
-  def : HWWriteRes<WriteLDS,     [HWLGKM],   5>; // Can be between 2 and 64
+  let ReleaseAtCycles = [4], NumMicroOps = 2 in 
+  def : HWWriteRes<WriteLDS,     [HWLGKM],   16>; // Can be between 2 and 64
   def : HWWriteRes<WriteSALU,    [HWSALU],   1>;
   def : HWWriteRes<WriteSMEM,    [HWLGKM],   5>;
   def : HWWriteRes<WriteVMEM,    [HWVMEM],   80>;
@@ -182,6 +183,7 @@ multiclass SICommonWriteRes {
   let ReleaseAtCycles = [16] in
   def : HWVALUWriteRes<Write16PassDGEMM,  16>;
 
+  let NumMicroOps = 2 in {
   let ReleaseAtCycles = [2] in
   def : HWWriteRes<Write2PassMAI,  [HWXDL], 2>;
   let ReleaseAtCycles = [4] in
@@ -190,6 +192,7 @@ multiclass SICommonWriteRes {
   def : HWWriteRes<Write8PassMAI,  [HWXDL], 8>;
   let ReleaseAtCycles = [16] in
   def : HWWriteRes<Write16PassMAI, [HWXDL], 16>;
+  }
 
   def : UnsupportedWriteRes<WriteSFPU>;
   def : UnsupportedWriteRes<WritePseudoScalarTrans>;

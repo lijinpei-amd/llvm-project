@@ -151,6 +151,7 @@ ResourceDistanceMaps::ResourceInfo::getOrderForRoot(SUnit *Root) const {
 }
 
 void ResourceDistanceMaps::ResourceInfo::sortRoots() {
+  // llvm::errs() << "roots\n";
   int Order = 0;
   bool Changed = false;
   for (auto Root : CurrentRoots) {
@@ -158,6 +159,7 @@ void ResourceDistanceMaps::ResourceInfo::sortRoots() {
       Changed = true;
     }
     Root->second.Order = Order++;
+    // DAG->dumpNode(*Root->first);
   }
   if (Changed) {
     SURankCache.clear();

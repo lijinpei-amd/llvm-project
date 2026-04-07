@@ -1284,7 +1284,7 @@ foreach RegSize = [ 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 512, 10
       [DefaultMode_Wave64, DefaultMode_Wave32, AVAlign2LoadStoreMode, AlignedVGPRNoAGPRMode_Wave64, AlignedVGPRNoAGPRMode_Wave32],
       [!cast<RegisterClass>("VReg_"#RegSize),
        !cast<RegisterClass>("VReg_"#RegSize),
-       !cast<RegisterClass>("AV_"#RegSize#_Align2),
+       !cast<RegisterClass>("VReg_"#RegSize#_Align2),
        !cast<RegisterClass>("VReg_"#RegSize#_Align2),
        !cast<RegisterClass>("VReg_"#RegSize#_Align2)]> {
     let DecoderMethod = "decodeAVLdSt";

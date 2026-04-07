@@ -821,6 +821,13 @@ void GCNPreRACriticalResource::updateRemainderCriticalRes() {
   RemCriticalRes = TrackRemCriticalRes
                        ? countCriticalResourceInRemainder(Rem, SchedModel)
                        : 0;
+  // if (Top.getCurrCycle() <= 40) {
+  //   RemCriticalRes = 6;
+  // } else {
+  //   RemCriticalRes = 7;
+  // }
+  RemCriticalRes = 7;
+  // llvm::errs() << "Critical Resource: " << SchedModel->getProcResource(RemCriticalRes)->Name << "\n";
 }
 
 void GCNPreRACriticalResource::schedNode(SUnit *SU, bool IsTopNode) {
@@ -828,6 +835,10 @@ void GCNPreRACriticalResource::schedNode(SUnit *SU, bool IsTopNode) {
   updateRemainderCriticalRes();
   ResDistMap.schedNode(SU, Top.getCurrCycle());
   PendingResInstrs.reset();
+  // auto * MI = SU->getInstr();
+  // if (SIInstrInfo::isDS(*MI) || SIInstrInfo::isMAI(*MI)) {
+  //   bumpCycle(Top.getCurrCycle() + 1);
+  // }
 }
 
 SUnit *GCNPreRACriticalResource::pickNode(bool &IsTopNode) {
@@ -919,7 +930,7 @@ bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
     // For loops that are acyclic path limited, aggressively schedule for
     // latency. Within an single cycle, whenever CurrMOps > 0, allow normal
     // heuristics to take precedence.
-    if ((!PendingResInstrs || *PendingResInstrs >= 2) &&
+    if ((!PendingResInstrs || *PendingResInstrs >= 3) &&
         Rem.IsAcyclicLatencyLimited && !Zone->getCurrMOps() &&
         tryLatency(TryCand, Cand, *Zone))
       return TryCand.Reason != NoCand;
@@ -1230,6 +1241,7 @@ void GCNPostRACriticalResource::updateRemainderCriticalRes() {
   RemCriticalRes = TrackRemCriticalRes
                        ? countCriticalResourceInRemainder(Rem, SchedModel)
                        : 0;
+  RemCriticalRes = 7;
 }
 
 bool GCNPostRACriticalResource::tryCandidate(SchedCandidate &Cand,
@@ -2498,6 +2510,7 @@ bool MemoryClauseInitialScheduleStage::shouldRevertScheduling(
 }
 
 bool GCNSchedStage::mayCauseSpilling(unsigned WavesAfter) {
+  return false;
   if (WavesAfter <= MFI.getMinWavesPerEU() && isRegionWithExcessRP() &&
       !PressureAfter.less(MF, PressureBefore)) {
     LLVM_DEBUG(dbgs() << "New pressure will result in more spilling.\n");
