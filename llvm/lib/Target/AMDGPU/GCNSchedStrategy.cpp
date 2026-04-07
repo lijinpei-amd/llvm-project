@@ -811,6 +811,7 @@ static unsigned getResourceUseCount(unsigned ResId, const MCSchedClassDesc *SC,
 void GCNPreRACriticalResource::initialize(ScheduleDAGMI *DAG) {
   GCNSchedStrategy::initialize(DAG);
   ResDistMap.initialize(DAG);
+  DeferredNodes.clear();
   setTrackRemainderCriticalRes(
       Context->MF->getSubtarget<GCNSubtarget>(),
       !static_cast<GCNScheduleDAGMILive *>(DAG)->hasIGLPInstrs());
@@ -826,7 +827,12 @@ void GCNPreRACriticalResource::updateRemainderCriticalRes() {
   // } else {
   //   RemCriticalRes = 7;
   // }
-  RemCriticalRes = 7;
+  if (Top.getCurrCycle() <= AvoidResMaxCycle) {
+    RemAvoidRes = 3;
+  } else {
+    RemAvoidRes = 0;
+  }
+  RemCriticalRes = 8;
   // llvm::errs() << "Critical Resource: " << SchedModel->getProcResource(RemCriticalRes)->Name << "\n";
 }
 
@@ -841,7 +847,47 @@ void GCNPreRACriticalResource::schedNode(SUnit *SU, bool IsTopNode) {
   // }
 }
 
+void GCNPreRACriticalResource::releaseTopNode(SUnit *SU) {
+  if (SU->isScheduled)
+    return;
+
+  // If the node uses the avoided resource (e.g. HWLDS) and we are still within
+  // the first AvoidResMaxCycle cycles, defer it entirely — do not hand it to
+  // the SchedBoundary at all.  This prevents it from entering either the
+  // Pending or Available queues until we explicitly flush it afterwards.
+  if (RemAvoidRes && Top.getCurrCycle() <= AvoidResMaxCycle) {
+    if (getResourceUseCount(RemAvoidRes, DAG->getSchedClass(SU), SchedModel)) {
+      LLVM_DEBUG(dbgs().indent(2)
+                 << "Deferring SU(" << SU->NodeNum
+                 << ") -- uses avoided resource, cycle "
+                 << Top.getCurrCycle() << " <= " << AvoidResMaxCycle << "\n");
+      DeferredNodes.push_back(SU);
+      return;
+    }
+  }
+
+  Top.releaseNode(SU, SU->TopReadyCycle, false);
+  TopCand.SU = nullptr;
+}
+
+void GCNPreRACriticalResource::releaseDeferredNodes() {
+  if (DeferredNodes.empty() || Top.getCurrCycle() <= AvoidResMaxCycle)
+    return;
+
+  LLVM_DEBUG(dbgs() << "Flushing " << DeferredNodes.size()
+                    << " deferred nodes at cycle " << Top.getCurrCycle()
+                    << "\n");
+  for (SUnit *SU : DeferredNodes) {
+    if (SU->isScheduled)
+      continue;
+    Top.releaseNode(SU, SU->TopReadyCycle, false);
+  }
+  DeferredNodes.clear();
+  TopCand.SU = nullptr;
+}
+
 SUnit *GCNPreRACriticalResource::pickNode(bool &IsTopNode) {
+  releaseDeferredNodes();
   if (RemCriticalRes && !PendingResInstrs) {
     PendingResInstrs = count_if(
         concat<SUnit *const>(Top.getAvailableQueue(), Top.getPendingQueue()),
@@ -900,6 +946,14 @@ bool GCNPreRACriticalResource::tryCandidate(SchedCandidate &Cand,
       tryPressure(TryCand.RPDelta.CriticalMax, Cand.RPDelta.CriticalMax,
                   TryCand, Cand, RegCritical, TRI, DAG->MF))
     return TryCand.Reason != NoCand;
+
+  if (RemAvoidRes) {
+    auto U1 = getResourceUseCount(RemAvoidRes, DAG->getSchedClass(TryCand.SU), SchedModel);
+    auto U2 = getResourceUseCount(RemAvoidRes, DAG->getSchedClass(Cand.SU), SchedModel);
+    if (tryLess(U1, U2, TryCand, Cand, ResourceDemand)) {
+      return TryCand.Reason != NoCand;
+    }
+  }
 
   // We only compare a subset of features when comparing nodes between
   // Top and Bottom boundary. Some properties are simply incomparable, in many
@@ -1241,7 +1295,7 @@ void GCNPostRACriticalResource::updateRemainderCriticalRes() {
   RemCriticalRes = TrackRemCriticalRes
                        ? countCriticalResourceInRemainder(Rem, SchedModel)
                        : 0;
-  RemCriticalRes = 7;
+  RemCriticalRes = 8;
 }
 
 bool GCNPostRACriticalResource::tryCandidate(SchedCandidate &Cand,

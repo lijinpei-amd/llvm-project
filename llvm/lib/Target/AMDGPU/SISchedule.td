@@ -136,6 +136,9 @@ def HWRC   : ProcResource<1> { // Register destination cache
 def HWXDL   : ProcResource<1> { // MFMA CU
   let BufferSize = 0;
 }
+def HWLDS : ProcResource<1> { // MFMA CU
+  let BufferSize = 1;
+}
 
 class HWWriteRes<SchedWrite write, list<ProcResourceKind> resources,
                  int latency> : WriteRes<write, resources> {
@@ -164,8 +167,8 @@ multiclass SICommonWriteRes {
   let RetireOOO = 1 in { // llvm-mca specific flag
   def : HWWriteRes<WriteBranch,  [HWBranch], 8>;
   def : HWWriteRes<WriteExport,  [HWExport], 4>;
-  let ReleaseAtCycles = [4], NumMicroOps = 2 in 
-  def : HWWriteRes<WriteLDS,     [HWLGKM],   16>; // Can be between 2 and 64
+  let ReleaseAtCycles = [4, 1], NumMicroOps = 2 in 
+  def : HWWriteRes<WriteLDS,     [HWLGKM, HWLDS],   16>; // Can be between 2 and 64
   def : HWWriteRes<WriteSALU,    [HWSALU],   1>;
   def : HWWriteRes<WriteSMEM,    [HWLGKM],   5>;
   def : HWWriteRes<WriteVMEM,    [HWVMEM],   80>;
