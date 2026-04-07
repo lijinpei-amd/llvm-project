@@ -206,10 +206,21 @@ public:
 class GCNPreRACriticalResource final : public GCNSchedStrategy {
   AMDGPU::ResourceDistanceMaps ResDistMap;
 
+  /// Number of initial cycles during which nodes that use the avoided resource
+  /// (HWLDS) are held back from the Available queue.
+  static constexpr unsigned AvoidResMaxCycle = 1024;
+
+  /// Nodes that use the avoided resource (HWLDS) and were held back because
+  /// they became ready before cycle AvoidResMaxCycle.  They are flushed once
+  /// Top.getCurrCycle() > AvoidResMaxCycle.
+  SmallVector<SUnit *, 16> DeferredNodes;
+
 protected:
   bool TrackRemCriticalRes;
 
   unsigned RemCriticalRes;
+
+  unsigned RemAvoidRes;
 
   std::optional<unsigned> PendingResInstrs;
 
@@ -223,6 +234,11 @@ protected:
   void schedNode(SUnit *SU, bool IsTopNode) override;
 
   SUnit *pickNode(bool &IsTopNode) override;
+
+  void releaseTopNode(SUnit *SU) override;
+
+  /// Release any deferred HWLDS nodes once past AvoidResMaxCycle.
+  void releaseDeferredNodes();
 
 public:
   GCNPreRACriticalResource(const MachineSchedContext *C);
