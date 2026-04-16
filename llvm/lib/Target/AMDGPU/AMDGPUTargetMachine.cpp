@@ -737,6 +737,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAMDGPUTarget() {
   initializeAMDGPUWaitSGPRHazardsLegacyPass(*PR);
   initializeAMDGPUPreloadKernelArgumentsLegacyPass(*PR);
   initializeAMDGPUUniformIntrinsicCombineLegacyPass(*PR);
+  initializeAMDGPUWaveDivergentLoopDuplicationLegacyPass(*PR);
 }
 
 static std::unique_ptr<TargetLoweringObjectFile> createTLOF(const Triple &TT) {
@@ -1793,6 +1794,11 @@ void GCNPassConfig::addOptimizedRegAlloc() {
   // compilation time, so we only enable it from O2.
   if (TM->getOptLevel() > CodeGenOptLevel::Less)
     insertPass(&MachineSchedulerID, &SIFormMemoryClausesID);
+
+  // Wave-divergent loop duplication runs after register coalescing but before
+  // pre-RA scheduling so that each copy can be scheduled independently.
+  insertPass(&RegisterCoalescerID,
+             &AMDGPUWaveDivergentLoopDuplicationLegacyID);
 
   TargetPassConfig::addOptimizedRegAlloc();
 }

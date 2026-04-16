@@ -67,6 +67,7 @@ ModulePass *createAMDGPULowerBufferFatPointersPass();
 ModulePass *createAMDGPULowerIntrinsicsLegacyPass();
 FunctionPass *createSIModeRegisterPass();
 FunctionPass *createGCNPreRAOptimizationsLegacyPass();
+FunctionPass *createAMDGPUWaveDivergentLoopDuplicationPass();
 FunctionPass *createAMDGPUPreloadKernArgPrologLegacyPass();
 ModulePass *createAMDGPUPreloadKernelArgumentsLegacyPass(const TargetMachine *);
 
@@ -561,6 +562,9 @@ extern char &GCNPreRALongBranchRegID;
 
 void initializeGCNPreRAOptimizationsLegacyPass(PassRegistry &);
 extern char &GCNPreRAOptimizationsID;
+
+void initializeAMDGPUWaveDivergentLoopDuplicationLegacyPass(PassRegistry &);
+extern char &AMDGPUWaveDivergentLoopDuplicationLegacyID;
 
 FunctionPass *createAMDGPUSetWavePriorityPass();
 void initializeAMDGPUSetWavePriorityLegacyPass(PassRegistry &);
