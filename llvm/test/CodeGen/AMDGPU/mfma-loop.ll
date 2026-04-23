@@ -1836,14 +1836,14 @@ define amdgpu_kernel void @test_mfma_loop_mfma_forward_init(ptr addrspace(1) %ar
 ;
 ; GFX942-LABEL: test_mfma_loop_mfma_forward_init:
 ; GFX942:       ; %bb.0: ; %entry
-; GFX942-NEXT:    v_mov_b32_e32 v32, 1.0
-; GFX942-NEXT:    v_mov_b32_e32 v33, 2.0
+; GFX942-NEXT:    v_mov_b32_e32 v32, 2.0
+; GFX942-NEXT:    v_mov_b32_e32 v33, 1.0
 ; GFX942-NEXT:    s_mov_b32 s0, 16
 ; GFX942-NEXT:    s_nop 0
-; GFX942-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v32, v33, 0
+; GFX942-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v33, v32, 0
 ; GFX942-NEXT:  .LBB7_1: ; %for.cond.preheader
 ; GFX942-NEXT:    ; =>This Inner Loop Header: Depth=1
-; GFX942-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v32, v33, v[0:31]
+; GFX942-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v33, v32, v[0:31]
 ; GFX942-NEXT:    s_add_i32 s0, s0, -1
 ; GFX942-NEXT:    s_cmp_lg_u32 s0, 0
 ; GFX942-NEXT:    s_cbranch_scc1 .LBB7_1
@@ -2075,11 +2075,11 @@ define amdgpu_kernel void @test_mfma_loop_agpr_init(ptr addrspace(1) %arg) #0 {
 ;
 ; GFX942-LABEL: test_mfma_loop_agpr_init:
 ; GFX942:       ; %bb.0: ; %entry
-; GFX942-NEXT:    v_mov_b32_e32 v32, 1.0
-; GFX942-NEXT:    v_mov_b32_e32 v33, 2.0
+; GFX942-NEXT:    v_mov_b32_e32 v32, 2.0
+; GFX942-NEXT:    v_mov_b32_e32 v33, 1.0
 ; GFX942-NEXT:    s_mov_b32 s0, 16
 ; GFX942-NEXT:    s_nop 0
-; GFX942-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v32, v33, 0
+; GFX942-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v33, v32, 0
 ; GFX942-NEXT:    s_nop 15
 ; GFX942-NEXT:    s_nop 1
 ; GFX942-NEXT:    v_mov_b32_e32 v1, v0
@@ -2116,7 +2116,7 @@ define amdgpu_kernel void @test_mfma_loop_agpr_init(ptr addrspace(1) %arg) #0 {
 ; GFX942-NEXT:  .LBB8_1: ; %for.cond.preheader
 ; GFX942-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; GFX942-NEXT:    s_nop 1
-; GFX942-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v32, v33, v[0:31]
+; GFX942-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v33, v32, v[0:31]
 ; GFX942-NEXT:    s_add_i32 s0, s0, -1
 ; GFX942-NEXT:    s_cmp_lg_u32 s0, 0
 ; GFX942-NEXT:    s_cbranch_scc1 .LBB8_1

@@ -22,11 +22,11 @@ define amdgpu_kernel void @test_rewrite_mfma_copy_to_agpr_phi(ptr addrspace(1) %
 ; CHECK-NEXT:    global_load_dwordx4 a[8:11], v32, s[2:3] offset:32
 ; CHECK-NEXT:    global_load_dwordx4 a[4:7], v32, s[2:3] offset:16
 ; CHECK-NEXT:    global_load_dwordx4 a[0:3], v32, s[2:3]
-; CHECK-NEXT:    v_mov_b32_e32 v33, 2.0
-; CHECK-NEXT:    v_mov_b32_e32 v34, 4.0
+; CHECK-NEXT:    v_mov_b32_e32 v33, 4.0
+; CHECK-NEXT:    v_mov_b32_e32 v34, 2.0
 ; CHECK-NEXT:    s_waitcnt vmcnt(0)
 ; CHECK-NEXT:    s_nop 0
-; CHECK-NEXT:    v_mfma_f32_32x32x1_2b_f32 a[0:31], v33, v34, a[0:31]
+; CHECK-NEXT:    v_mfma_f32_32x32x1_2b_f32 a[0:31], v34, v33, a[0:31]
 ; CHECK-NEXT:    ; kill: def $agpr0_agpr1_agpr2_agpr3_agpr4_agpr5_agpr6_agpr7_agpr8_agpr9_agpr10_agpr11_agpr12_agpr13_agpr14_agpr15_agpr16_agpr17_agpr18_agpr19_agpr20_agpr21_agpr22_agpr23_agpr24_agpr25_agpr26_agpr27_agpr28_agpr29_agpr30_agpr31 killed $agpr0_agpr1_agpr2_agpr3_agpr4_agpr5_agpr6_agpr7_agpr8_agpr9_agpr10_agpr11_agpr12_agpr13_agpr14_agpr15_agpr16_agpr17_agpr18_agpr19_agpr20_agpr21_agpr22_agpr23_agpr24_agpr25_agpr26_agpr27_agpr28_agpr29_agpr30_agpr31 killed $exec
 ; CHECK-NEXT:    s_cbranch_execz .LBB0_3
 ; CHECK-NEXT:    s_branch .LBB0_4
@@ -42,11 +42,11 @@ define amdgpu_kernel void @test_rewrite_mfma_copy_to_agpr_phi(ptr addrspace(1) %
 ; CHECK-NEXT:    global_load_dwordx4 a[8:11], v32, s[0:1] offset:32
 ; CHECK-NEXT:    global_load_dwordx4 a[4:7], v32, s[0:1] offset:16
 ; CHECK-NEXT:    global_load_dwordx4 a[0:3], v32, s[0:1]
-; CHECK-NEXT:    v_mov_b32_e32 v32, 2.0
-; CHECK-NEXT:    v_mov_b32_e32 v33, 4.0
+; CHECK-NEXT:    v_mov_b32_e32 v32, 4.0
+; CHECK-NEXT:    v_mov_b32_e32 v33, 2.0
 ; CHECK-NEXT:    s_waitcnt vmcnt(0)
 ; CHECK-NEXT:    s_nop 0
-; CHECK-NEXT:    v_mfma_f32_32x32x1_2b_f32 a[0:31], v32, v33, a[0:31]
+; CHECK-NEXT:    v_mfma_f32_32x32x1_2b_f32 a[0:31], v33, v32, a[0:31]
 ; CHECK-NEXT:    ; kill: def $agpr0_agpr1_agpr2_agpr3_agpr4_agpr5_agpr6_agpr7_agpr8_agpr9_agpr10_agpr11_agpr12_agpr13_agpr14_agpr15_agpr16_agpr17_agpr18_agpr19_agpr20_agpr21_agpr22_agpr23_agpr24_agpr25_agpr26_agpr27_agpr28_agpr29_agpr30_agpr31 killed $agpr0_agpr1_agpr2_agpr3_agpr4_agpr5_agpr6_agpr7_agpr8_agpr9_agpr10_agpr11_agpr12_agpr13_agpr14_agpr15_agpr16_agpr17_agpr18_agpr19_agpr20_agpr21_agpr22_agpr23_agpr24_agpr25_agpr26_agpr27_agpr28_agpr29_agpr30_agpr31 killed $exec
 ; CHECK-NEXT:  .LBB0_4: ; %endif
 ; CHECK-NEXT:    ;;#ASMSTART
