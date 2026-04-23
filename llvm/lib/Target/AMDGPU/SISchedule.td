@@ -122,7 +122,7 @@ def HWSALU   : ProcResource<1> {
   let BufferSize = 1;
 }
 def HWVMEM   : ProcResource<1> {
-  let BufferSize = 1;
+  let BufferSize = 0;
 }
 def HWVALU   : ProcResource<1> {
   let BufferSize = 1;
@@ -136,7 +136,7 @@ def HWRC   : ProcResource<1> { // Register destination cache
 def HWXDL   : ProcResource<1> { // MFMA CU
   let BufferSize = 0;
 }
-def HWLDS : ProcResource<1> { // MFMA CU
+def HWLDS : ProcResource<1> {
   let BufferSize = 1;
 }
 
@@ -171,6 +171,7 @@ multiclass SICommonWriteRes {
   def : HWWriteRes<WriteLDS,     [HWLGKM, HWLDS],   16>; // Can be between 2 and 64
   def : HWWriteRes<WriteSALU,    [HWSALU],   1>;
   def : HWWriteRes<WriteSMEM,    [HWLGKM],   5>;
+  let ReleaseAtCycles = [16] in 
   def : HWWriteRes<WriteVMEM,    [HWVMEM],   80>;
   def : HWWriteRes<WriteBarrier, [HWBranch], 500>; // XXX: Guessed ???
 

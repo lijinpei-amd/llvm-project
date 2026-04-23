@@ -887,6 +887,24 @@ void GCNPreRACriticalResource::releaseDeferredNodes() {
 }
 
 SUnit *GCNPreRACriticalResource::pickNode(bool &IsTopNode) {
+  // Guard against SchedBoundary::pickOnlyChoice() spinning forever: it
+  // contains an unbounded `for (; Available.empty(); ) bumpCycle(CurrCycle+1)`
+  // loop (the "permanent hazard" assert that used to terminate it is disabled
+  // per PR20057). releaseDeferredNodes() is only called from this function,
+  // so once that spin loop is entered the deferred queue is never flushed --
+  // even though CurrCycle does cross AvoidResMaxCycle inside the loop.
+  // If we are about to starve the base scheduler with HWLDS nodes still
+  // parked, fast-forward CurrCycle past AvoidResMaxCycle ourselves so the
+  // releaseDeferredNodes() below repopulates Top.Available.
+  if (!DeferredNodes.empty() && Top.Available.empty() &&
+      Top.Pending.empty() && Top.getCurrCycle() <= AvoidResMaxCycle) {
+    LLVM_DEBUG(dbgs() << "Starvation imminent at cycle " << Top.getCurrCycle()
+                      << "; fast-forwarding to " << (AvoidResMaxCycle + 1)
+                      << " to flush " << DeferredNodes.size()
+                      << " deferred HWLDS nodes\n");
+    Top.bumpCycle(AvoidResMaxCycle + 1);
+  }
+
   releaseDeferredNodes();
   if (RemCriticalRes && !PendingResInstrs) {
     PendingResInstrs = count_if(

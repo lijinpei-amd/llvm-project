@@ -208,7 +208,7 @@ class GCNPreRACriticalResource final : public GCNSchedStrategy {
 
   /// Number of initial cycles during which nodes that use the avoided resource
   /// (HWLDS) are held back from the Available queue.
-  static constexpr unsigned AvoidResMaxCycle = 0;
+  static constexpr unsigned AvoidResMaxCycle = 150;
 
   /// Nodes that use the avoided resource (HWLDS) and were held back because
   /// they became ready before cycle AvoidResMaxCycle.  They are flushed once
