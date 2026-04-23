@@ -70,8 +70,8 @@ define amdgpu_kernel void @test_revert_schedule(i32 %arg0, i32 %arg1, ptr addrsp
   ; CHECK-NEXT:   [[V_MOV_B32_e32_4:%[0-9]+]].sub0:vreg_64_align2 = COPY [[S_MOV_B32_]].sub0
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B32_e32_4]], [[V_MOV_B]], 0, 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MOV_B32_e32_3:%[0-9]+]].sub0:vreg_64_align2 = COPY [[S_MOV_B32_]].sub0
-  ; CHECK-NEXT:   undef [[DS_READ_B32_gfx9_:%[0-9]+]].sub0:vreg_64_align2 = DS_READ_B32_gfx9 [[V_MOV_B32_e32_]], 0, 0, implicit $exec :: (load (s32) from `ptr addrspace(3) null`, align 8, addrspace 3)
   ; CHECK-NEXT:   undef [[V_MOV_B32_e32_4:%[0-9]+]].sub1:vreg_64_align2 = DS_READ_B32_gfx9 [[V_ADD_U32_e32_]], 0, 0, implicit $exec :: (load (s32) from %ir.sunkaddr, addrspace 3)
+  ; CHECK-NEXT:   undef [[DS_READ_B32_gfx9_:%[0-9]+]].sub0:vreg_64_align2 = DS_READ_B32_gfx9 [[V_MOV_B32_e32_]], 0, 0, implicit $exec :: (load (s32) from `ptr addrspace(3) null`, align 8, addrspace 3)
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_1:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B32_e32_3]], [[V_MOV_B]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   undef [[V_MOV_B32_e32_3:%[0-9]+]].sub1:vreg_64_align2 = DS_READ_B32_gfx9 [[V_ADD_U32_e32_1]], 0, 0, implicit $exec :: (load (s32) from %ir.sunkaddr2, addrspace 3)
   ; CHECK-NEXT:   SCHED_GROUP_BARRIER 0, 0, 0
@@ -81,17 +81,9 @@ define amdgpu_kernel void @test_revert_schedule(i32 %arg0, i32 %arg1, ptr addrsp
   ; CHECK-NEXT:   S_BRANCH %bb.2
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.2.exit:
-  ; CHECK-NEXT:   [[V_MOV_B1:%[0-9]+]]:vreg_64_align2 = V_MOV_B64_PSEUDO 0, implicit $exec
   ; CHECK-NEXT:   undef [[S_MOV_B32_1:%[0-9]+]].sub0:sgpr_128 = S_MOV_B32 0
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_2:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], 0, 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MOV_B32_e32_4:%[0-9]+]].sub0:vreg_64_align2 = COPY [[S_MOV_B32_1]].sub0
-  ; CHECK-NEXT:   undef [[S_MOV_B32_2:%[0-9]+]].sub0:sreg_64 = S_MOV_B32 16843009
-  ; CHECK-NEXT:   [[S_MOV_B32_2:%[0-9]+]].sub1:sreg_64 = COPY [[S_MOV_B32_2]].sub0
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_3:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B32_e32_4]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_2]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[COPY4:%[0-9]+]]:av_64_align2 = COPY [[S_MOV_B32_2]]
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_4:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[COPY4]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_3]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[DS_READ_B32_gfx9_:%[0-9]+]].sub1:vreg_64_align2 = V_MOV_B32_e32 0, implicit $exec
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_5:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_4]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[S_LOAD_DWORD_IMM3:%[0-9]+]]:sreg_32_xm0_xexec = S_LOAD_DWORD_IMM [[COPY]](p4), 24, 0 :: (dereferenceable invariant load (s32) from %ir.arg2.kernarg.offset, align 8, addrspace 4)
   ; CHECK-NEXT:   [[S_LOAD_DWORD_IMM4:%[0-9]+]]:sreg_32_xm0_xexec = S_LOAD_DWORD_IMM [[COPY]](p4), 40, 0 :: (dereferenceable invariant load (s32) from %ir.arg6.kernarg.offset, align 8, addrspace 4)
   ; CHECK-NEXT:   [[S_LOAD_DWORD_IMM5:%[0-9]+]]:sreg_32_xm0_xexec = S_LOAD_DWORD_IMM [[COPY]](p4), 48, 0 :: (dereferenceable invariant load (s32) from %ir.x7.kernarg.offset, align 16, addrspace 4)
@@ -100,57 +92,65 @@ define amdgpu_kernel void @test_revert_schedule(i32 %arg0, i32 %arg1, ptr addrsp
   ; CHECK-NEXT:   [[S_LOAD_DWORD_IMM8:%[0-9]+]]:sreg_32_xm0_xexec = S_LOAD_DWORD_IMM [[COPY]](p4), 80, 0 :: (dereferenceable invariant load (s32) from %ir.a2.kernarg.offset, align 16, addrspace 4)
   ; CHECK-NEXT:   early-clobber %119:sreg_64_xexec = S_LOAD_DWORDX2_IMM_ec [[COPY]](p4), 84, 0 :: (dereferenceable invariant load (s64) from %ir.arg8.kernarg.offset, align 4, addrspace 4)
   ; CHECK-NEXT:   KILL [[COPY]](p4)
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_6:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_5]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[V_MOV_B32_e32_5:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 16384, implicit $exec
-  ; CHECK-NEXT:   [[V_MOV_B32_e32_6:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 20480, implicit $exec
-  ; CHECK-NEXT:   undef [[COPY5:%[0-9]+]].sub1:vreg_64_align2 = COPY [[DS_READ_B32_gfx9_]].sub1
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_7:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_6]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   undef [[COPY6:%[0-9]+]].sub0:vreg_64_align2 = COPY [[DS_READ_B32_gfx9_]].sub1
+  ; CHECK-NEXT:   undef [[COPY4:%[0-9]+]].sub1:vreg_64_align2 = COPY [[DS_READ_B32_gfx9_]].sub1
+  ; CHECK-NEXT:   undef [[COPY5:%[0-9]+]].sub0:vreg_64_align2 = COPY [[DS_READ_B32_gfx9_]].sub1
   ; CHECK-NEXT:   [[S_MOV_B32_1:%[0-9]+]].sub1:sgpr_128 = COPY [[S_MOV_B32_1]].sub0
   ; CHECK-NEXT:   [[S_MOV_B32_1:%[0-9]+]].sub2:sgpr_128 = COPY [[S_MOV_B32_1]].sub0
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_8:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_7]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[S_MOV_B32_1:%[0-9]+]].sub3:sgpr_128 = COPY [[S_MOV_B32_1]].sub0
+  ; CHECK-NEXT:   [[V_MOV_B32_e32_5:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 16384, implicit $exec
+  ; CHECK-NEXT:   [[V_MOV_B1:%[0-9]+]]:vreg_64_align2 = V_MOV_B64_PSEUDO 0, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_2:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], 0, 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_3:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B32_e32_4]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_2]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   undef [[S_MOV_B32_2:%[0-9]+]].sub0:sreg_64 = S_MOV_B32 16843009
+  ; CHECK-NEXT:   [[S_MOV_B32_2:%[0-9]+]].sub1:sreg_64 = COPY [[S_MOV_B32_2]].sub0
+  ; CHECK-NEXT:   [[COPY6:%[0-9]+]]:av_64_align2 = COPY [[S_MOV_B32_2]]
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_4:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[COPY6]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_3]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_5:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_4]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_6:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_5]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_7:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_6]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_8:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_7]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[COPY4:%[0-9]+]].sub0:vreg_64_align2 = COPY %119.sub0
+  ; CHECK-NEXT:   [[COPY5:%[0-9]+]].sub1:vreg_64_align2 = COPY %119.sub1
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_9:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFSET]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_8]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN3:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[V_MOV_B32_e32_5]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN4:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[V_MOV_B32_e32_5]], [[S_MOV_B32_1]], 0, 1024, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_9:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFSET]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_8]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[COPY5:%[0-9]+]].sub0:vreg_64_align2 = COPY %119.sub0
-  ; CHECK-NEXT:   [[COPY6:%[0-9]+]].sub1:vreg_64_align2 = COPY %119.sub1
   ; CHECK-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[S_LOAD_DWORD_IMM5]]
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_10:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFSET]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_9]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[COPY8:%[0-9]+]]:vgpr_32 = COPY [[S_LOAD_DWORD_IMM3]]
-  ; CHECK-NEXT:   [[S_ASHR_I32_:%[0-9]+]]:sreg_32 = S_ASHR_I32 [[S_LOAD_DWORD_IMM4]], 31, implicit-def dead $scc
-  ; CHECK-NEXT:   [[COPY9:%[0-9]+]]:vgpr_32 = COPY [[S_LOAD_DWORD_IMM6]]
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_11:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFSET1]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_10]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_10:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFSET]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_9]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN5:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[COPY7]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN6:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[V_MOV_B32_e32_5]], [[S_MOV_B32_1]], 0, 3072, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   KILL [[COPY7]]
   ; CHECK-NEXT:   KILL [[V_MOV_B32_e32_5]]
+  ; CHECK-NEXT:   [[S_ASHR_I32_:%[0-9]+]]:sreg_32 = S_ASHR_I32 [[S_LOAD_DWORD_IMM4]], 31, implicit-def dead $scc
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_11:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFSET1]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_10]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[S_LSHR_B32_:%[0-9]+]]:sreg_32 = S_LSHR_B32 [[S_ASHR_I32_]], 26, implicit-def dead $scc
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_12:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFSET1]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_11]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN7:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[COPY9]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
-  ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN8:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[V_MOV_B32_e32_6]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
-  ; CHECK-NEXT:   KILL [[COPY9]]
   ; CHECK-NEXT:   [[S_ADD_I32_:%[0-9]+]]:sreg_32 = S_ADD_I32 [[S_LOAD_DWORD_IMM4]], [[S_LSHR_B32_]], implicit-def dead $scc
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_13:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_12]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[S_ASHR_I32_1:%[0-9]+]]:sreg_32 = S_ASHR_I32 [[S_ADD_I32_]], 6, implicit-def dead $scc
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_12:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFSET1]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_11]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[S_LSHL_B32_:%[0-9]+]]:sreg_32 = S_LSHL_B32 [[S_ASHR_I32_1]], 1, implicit-def dead $scc
   ; CHECK-NEXT:   [[S_OR_B32_:%[0-9]+]]:sreg_32 = S_OR_B32 [[S_LSHL_B32_]], 19456, implicit-def dead $scc
+  ; CHECK-NEXT:   [[COPY9:%[0-9]+]]:vgpr_32 = COPY [[S_OR_B32_]]
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_13:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_12]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN7:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[COPY8]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
+  ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN8:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[COPY9]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
+  ; CHECK-NEXT:   KILL [[COPY9]]
+  ; CHECK-NEXT:   [[COPY10:%[0-9]+]]:vgpr_32 = COPY [[S_LOAD_DWORD_IMM6]]
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_14:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_13]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[COPY10:%[0-9]+]]:vgpr_32 = COPY [[S_OR_B32_]]
-  ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN9:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[COPY8]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
-  ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN10:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[COPY10]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
+  ; CHECK-NEXT:   [[V_MOV_B32_e32_6:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 20480, implicit $exec
+  ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN9:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[COPY10]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
+  ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN10:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[V_MOV_B32_e32_6]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   KILL [[COPY10]]
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_15:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_1]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFSET4:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFSET [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFSET5:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFSET [[S_MOV_B32_1]], 0, 1, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   [[COPY11:%[0-9]+]]:vgpr_32 = COPY [[S_LOAD_DWORD_IMM7]]
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_16:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[COPY5]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_15]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_16:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[COPY4]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_15]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[COPY12:%[0-9]+]]:vgpr_32 = COPY [[S_LOAD_DWORD_IMM8]]
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN11:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[COPY11]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN12:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[COPY12]], [[S_MOV_B32_1]], 0, 0, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   KILL [[COPY11]]
   ; CHECK-NEXT:   KILL [[COPY12]]
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_17:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[COPY6]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_16]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_17:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[COPY5]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_16]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN13:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[V_MOV_B32_e32_6]], [[S_MOV_B32_1]], 0, 2048, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   [[BUFFER_LOAD_DWORDX4_OFFEN14:%[0-9]+]]:vreg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN [[V_MOV_B32_e32_6]], [[S_MOV_B32_1]], 0, 3072, 0, 0, implicit $exec :: (dereferenceable load (s128) from `ptr addrspace(8) null`, align 1, addrspace 8)
   ; CHECK-NEXT:   KILL [[V_MOV_B32_e32_6]]
@@ -216,7 +216,7 @@ define amdgpu_kernel void @test_revert_schedule(i32 %arg0, i32 %arg1, ptr addrsp
   ; CHECK-NEXT:   [[DS_READ_B32_gfx9_9:%[0-9]+]].sub0:av_64_align2 = COPY [[S_MOV_B32_1]].sub0
   ; CHECK-NEXT:   SCHED_BARRIER 0
   ; CHECK-NEXT:   [[DS_READ_B64_gfx9_:%[0-9]+]].sub1:av_64_align2 = COPY [[DS_READ_B32_gfx9_1]]
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_30:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[COPY4]], [[BUFFER_LOAD_DWORDX4_OFFSET4]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_14]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_30:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[COPY6]], [[BUFFER_LOAD_DWORDX4_OFFSET4]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_14]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[DS_READ_B32_gfx9_8:%[0-9]+]].sub1:av_64_align2 = COPY [[S_MOV_B32_1]].sub0
   ; CHECK-NEXT:   [[DS_READ_B32_gfx9_10:%[0-9]+]].sub1:av_64_align2 = COPY [[S_MOV_B32_1]].sub0
   ; CHECK-NEXT:   [[V_MUL_LO_U32_e64_:%[0-9]+]]:vgpr_32 = V_MUL_LO_U32_e64 [[V_LSHRREV_B32_e32_]], [[S_LOAD_DWORDX4_IMM]].sub0, implicit $exec
@@ -230,17 +230,17 @@ define amdgpu_kernel void @test_revert_schedule(i32 %arg0, i32 %arg1, ptr addrsp
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_35:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B64_gfx9_]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_33]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_36:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN5]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_34]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_37:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN6]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_35]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_38:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN9]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_36]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_38:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN7]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_36]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_39:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_4]], [[BUFFER_LOAD_DWORDX4_OFFEN6]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_37]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_40:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN9]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_38]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_41:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_5]], [[BUFFER_LOAD_DWORDX4_OFFEN8]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_39]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_42:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN10]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_40]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_43:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_3]], [[BUFFER_LOAD_DWORDX4_OFFEN8]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_41]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_44:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN10]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_42]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_40:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN7]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_38]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_41:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_5]], [[BUFFER_LOAD_DWORDX4_OFFEN10]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_39]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_42:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN8]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_40]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_43:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_3]], [[BUFFER_LOAD_DWORDX4_OFFEN10]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_41]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_44:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN8]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_42]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_45:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_6]], [[BUFFER_LOAD_DWORDX4_OFFSET5]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_43]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_46:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN7]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_44]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_46:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN9]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_44]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_47:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFSET5]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_45]], 0, 0, 0, implicit $mode, implicit $exec
-  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_48:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_9]], [[BUFFER_LOAD_DWORDX4_OFFEN7]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_46]], 0, 0, 0, implicit $mode, implicit $exec
+  ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_48:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_9]], [[BUFFER_LOAD_DWORDX4_OFFEN9]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_46]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_49:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[DS_READ_B32_gfx9_7]], [[V_MOV_B1]], [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_47]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_50:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN11]].sub0_sub1, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_48]], 0, 0, 0, implicit $mode, implicit $exec
   ; CHECK-NEXT:   [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_51:%[0-9]+]]:vreg_128_align2 = V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64 [[V_MOV_B1]], [[BUFFER_LOAD_DWORDX4_OFFEN13]].sub2_sub3, [[V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64_49]], 0, 0, 0, implicit $mode, implicit $exec

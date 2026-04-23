@@ -78,8 +78,8 @@ define amdgpu_kernel void @not_enough_agprs(ptr addrspace(1) %arg) #2 {
 ; HEURRC-LABEL: not_enough_agprs:
 ; HEURRC:       ; %bb.0: ; %bb
 ; HEURRC-NEXT:    s_load_dwordx2 s[34:35], s[4:5], 0x24
-; HEURRC-NEXT:    v_mov_b32_e32 v33, 1.0
-; HEURRC-NEXT:    v_mov_b32_e32 v34, 2.0
+; HEURRC-NEXT:    v_mov_b32_e32 v33, 2.0
+; HEURRC-NEXT:    v_mov_b32_e32 v34, 1.0
 ; HEURRC-NEXT:    v_mov_b32_e32 v32, 0
 ; HEURRC-NEXT:    s_waitcnt lgkmcnt(0)
 ; HEURRC-NEXT:    s_load_dwordx16 s[16:31], s[34:35], 0x0
@@ -118,7 +118,7 @@ define amdgpu_kernel void @not_enough_agprs(ptr addrspace(1) %arg) #2 {
 ; HEURRC-NEXT:    v_mov_b32_e32 v30, s14
 ; HEURRC-NEXT:    v_mov_b32_e32 v31, s15
 ; HEURRC-NEXT:    s_nop 1
-; HEURRC-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v33, v34, v[0:31] cbsz:1 abid:2 blgp:3
+; HEURRC-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v34, v33, v[0:31] cbsz:1 abid:2 blgp:3
 ; HEURRC-NEXT:    s_nop 15
 ; HEURRC-NEXT:    s_nop 1
 ; HEURRC-NEXT:    global_store_dwordx4 v32, v[24:27], s[34:35] offset:96
@@ -134,8 +134,8 @@ define amdgpu_kernel void @not_enough_agprs(ptr addrspace(1) %arg) #2 {
 ; VGPRRC-LABEL: not_enough_agprs:
 ; VGPRRC:       ; %bb.0: ; %bb
 ; VGPRRC-NEXT:    s_load_dwordx2 s[34:35], s[4:5], 0x24
-; VGPRRC-NEXT:    v_mov_b32_e32 v33, 1.0
-; VGPRRC-NEXT:    v_mov_b32_e32 v34, 2.0
+; VGPRRC-NEXT:    v_mov_b32_e32 v33, 2.0
+; VGPRRC-NEXT:    v_mov_b32_e32 v34, 1.0
 ; VGPRRC-NEXT:    v_mov_b32_e32 v32, 0
 ; VGPRRC-NEXT:    s_waitcnt lgkmcnt(0)
 ; VGPRRC-NEXT:    s_load_dwordx16 s[16:31], s[34:35], 0x0
@@ -174,7 +174,7 @@ define amdgpu_kernel void @not_enough_agprs(ptr addrspace(1) %arg) #2 {
 ; VGPRRC-NEXT:    v_mov_b32_e32 v30, s14
 ; VGPRRC-NEXT:    v_mov_b32_e32 v31, s15
 ; VGPRRC-NEXT:    s_nop 1
-; VGPRRC-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v33, v34, v[0:31] cbsz:1 abid:2 blgp:3
+; VGPRRC-NEXT:    v_mfma_f32_32x32x1_2b_f32 v[0:31], v34, v33, v[0:31] cbsz:1 abid:2 blgp:3
 ; VGPRRC-NEXT:    s_nop 15
 ; VGPRRC-NEXT:    s_nop 1
 ; VGPRRC-NEXT:    global_store_dwordx4 v32, v[24:27], s[34:35] offset:96

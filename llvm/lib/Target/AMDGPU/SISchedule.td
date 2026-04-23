@@ -312,23 +312,26 @@ def : HWVALUWriteRes<Write64Bit,       1>;
 
 def : InstRW<[WriteCopy], (instrs COPY)>;
 def : InstRW<[Write64Bit], (instregex "^V_ACCVGPR_WRITE_B32_e64$")>;
-def : InstRW<[Write2PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_4X4X")>;
+// MIMFMARead intentionally omitted: a single SchedRead in InstRW binds
+// only to src0 (UseIdx 0), so attaching it added a 4-cycle stall on the
+// A multiplicand only.
+def : InstRW<[Write2PassMAI],  (instregex "^V_MFMA_.32_4X4X")>;
 
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X8X")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X16")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X32")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
+def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X8X")>;
+def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X16")>;
+def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X32")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
 
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X4XF")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X8")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X16")>;
-def : InstRW<[Write16PassMAI,  MIMFMARead], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X4XF")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X8")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X16")>;
+def : InstRW<[Write16PassMAI], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
 
-def : InstRW<[Write4PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_4X4X")>;
-def : InstRW<[Write8PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_16X16X")>;
+def : InstRW<[Write4PassDGEMM], (instregex "^V_MFMA_.64_4X4X")>;
+def : InstRW<[Write8PassDGEMM], (instregex "^V_MFMA_.64_16X16X")>;
 
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_SMFMAC_.32_16X16X")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_SMFMAC_.32_32X32X")>;
+def : InstRW<[Write4PassMAI],  (instregex "^V_SMFMAC_.32_16X16X")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_SMFMAC_.32_32X32X")>;
 
 } // End SchedModel = SIDPGFX942FullSpeedModel
 
@@ -346,25 +349,26 @@ def : HWVALUWriteRes<Write64Bit,       1>;
 
 def : InstRW<[WriteCopy], (instrs COPY)>;
 def : InstRW<[Write64Bit], (instregex "^V_ACCVGPR_WRITE_B32_e64$")>;
-def : InstRW<[Write2PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_4X4X")>;
+// See gfx942 block above: MIMFMARead intentionally omitted on gfx950.
+def : InstRW<[Write2PassMAI],  (instregex "^V_MFMA_.32_4X4X")>;
 
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X8X")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X16")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X32")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X64")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
+def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X8X")>;
+def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X16")>;
+def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X32")>;
+def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X64")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
 
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X4XF")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X8")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X16")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X32_")>;
-def : InstRW<[Write16PassMAI,  MIMFMARead], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X4XF")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X8")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X16")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X32_")>;
+def : InstRW<[Write16PassMAI], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
 
-def : InstRW<[Write4PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_4X4X")>;
-def : InstRW<[Write16PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_16X16X")>;
+def : InstRW<[Write4PassDGEMM],  (instregex "^V_MFMA_.64_4X4X")>;
+def : InstRW<[Write16PassDGEMM], (instregex "^V_MFMA_.64_16X16X")>;
 
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_SMFMAC_.32_16X16X")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_SMFMAC_.32_32X32X")>;
+def : InstRW<[Write4PassMAI],  (instregex "^V_SMFMAC_.32_16X16X")>;
+def : InstRW<[Write8PassMAI],  (instregex "^V_SMFMAC_.32_32X32X")>;
 
 
 // If either matrix format is f8, the instruction takes 2x as many
@@ -376,9 +380,9 @@ def WriteMFMAScale_32X32X64_F8F6F4 : SchedWriteVariant<[
     SchedVar<PredIsF8_MFMA_SCALE, [Write16PassMAI]>,
     SchedVar<NoSchedPred, [Write8PassMAI]>]>;
 
-def : InstRW<[WriteMFMAScale_16X16X128_F8F6F4, MIMFMARead],
+def : InstRW<[WriteMFMAScale_16X16X128_F8F6F4],
        (instregex "^V_MFMA(_SCALE)?_.32_16X16X128_F8F6F4")>;
-def : InstRW<[WriteMFMAScale_32X32X64_F8F6F4,  MIMFMARead],
+def : InstRW<[WriteMFMAScale_32X32X64_F8F6F4],
         (instregex "^V_MFMA(_SCALE)?_.32_32X32X64_F8F6F4")>;
 
 } // End SchedModel = SIDPGFX950FullSpeedModel
