@@ -617,6 +617,12 @@ private:
 private:
   Register VGPRForAGPRCopy;
 
+  // Map from a WAIT_ASYNCMARK MachineInstr to the ASYNCMARK MachineInstr it
+  // is meant to drain to. Populated by the AsyncMarkMutation during scheduling
+  // and consumed by the SIFixupAsyncMarkWaits pass after scheduling so the
+  // immediate operand can be recomputed in current program order.
+  DenseMap<const MachineInstr *, const MachineInstr *> AsyncWaitTarget;
+
   bool allocateVirtualVGPRForSGPRSpills(MachineFunction &MF, int FI,
                                         unsigned LaneIndex);
   bool allocatePhysicalVGPRForSGPRSpills(MachineFunction &MF, int FI,
@@ -646,6 +652,15 @@ public:
   bool hasMaskForVGPRBlockOps(Register RegisterBlock) const {
     return MaskForVGPRBlockOps.inBounds(RegisterBlock);
   }
+
+  void setAsyncWaitTarget(const MachineInstr *Wait, const MachineInstr *Tgt) {
+    AsyncWaitTarget[Wait] = Tgt;
+  }
+  const MachineInstr *getAsyncWaitTarget(const MachineInstr *Wait) const {
+    auto It = AsyncWaitTarget.find(Wait);
+    return It == AsyncWaitTarget.end() ? nullptr : It->second;
+  }
+  void clearAsyncWaitTargets() { AsyncWaitTarget.clear(); }
 
 public:
   SIMachineFunctionInfo(const SIMachineFunctionInfo &MFI) = default;
