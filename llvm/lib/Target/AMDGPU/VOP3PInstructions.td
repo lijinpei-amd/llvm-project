@@ -1010,26 +1010,51 @@ class MAIFrag<SDPatternOperator Op, bit HasAbid = true, bit Scaled = false> : Pa
               !if(HasAbid, (Op $src0, $src1, $src2, $cbsz, $abid, $blgp),
                            (Op $src0, $src1, $src2, $cbsz, $blgp)))>;
 
-class CanUseAGPR_MAI<ValueType vt> {
+// Predicate fragment to combine an AGPR-form check with an optional
+// "C operand has one SDValue use" check used to choose between the
+// untied (_e64) and tied (_mac_e64) MFMA forms at ISel time.
+//
+// IsMac = 1 -> require N->getOperand(3).hasOneUse() (pick _mac_e64)
+// IsMac = 0 -> require !N->getOperand(3).hasOneUse() (pick _e64)
+// IsMac = -1 -> no use-count constraint (legacy behavior)
+class CanUseAGPR_MAI<ValueType vt, int IsMac = -1> {
+  defvar UseCheck =
+    !cond(!eq(IsMac,  1) : " && N->getOperand(3).hasOneUse()",
+          !eq(IsMac,  0) : " && !N->getOperand(3).hasOneUse()",
+          true           : "");
+
   code PredicateCode = [{
-    return !Subtarget->hasGFX90AInsts() ||
+    return (!Subtarget->hasGFX90AInsts() ||
       MF->getInfo<SIMachineFunctionInfo>()->selectAGPRFormMFMA(
-        }] # !srl(vt.Size, 5) # ");";
+        }] # !srl(vt.Size, 5) # "))" # UseCheck # [{;
+  }];
 
   code GISelPredicateCode = [{
     return !Subtarget->hasGFX90AInsts() ||
       MF.getInfo<SIMachineFunctionInfo>()->selectAGPRFormMFMA(
-  }] # !srl(vt.Size, 5) # ");";
+  }] # !srl(vt.Size, 5) # [{);
+  }];
+}
+
+// VGPR variant. We don't have an AGPR-availability check here; just the
+// tied/untied use-count gate (when IsMac != -1).
+class UseCountVgpr_MAI<int IsMac = -1> {
+  defvar UseCheck =
+    !cond(!eq(IsMac,  1) : "return N->getOperand(3).hasOneUse();",
+          !eq(IsMac,  0) : "return !N->getOperand(3).hasOneUse();",
+          true           : "return true;");
+  code PredicateCode = [{ }] # UseCheck # [{ }];
 }
 
 class AgprMAIFrag<SDPatternOperator Op, ValueType vt, bit HasAbid = true,
-                  bit Scaled = false> :
+                  bit Scaled = false, int IsMac = -1> :
   MAIFrag<Op, HasAbid, Scaled>,
-  CanUseAGPR_MAI<vt>;
+  CanUseAGPR_MAI<vt, IsMac>;
 
 class VgprMAIFrag<SDPatternOperator Op, bit HasAbid = true,
-                  bit Scaled = false> :
-  MAIFrag<Op, HasAbid, Scaled>;
+                  bit Scaled = false, int IsMac = -1> :
+  MAIFrag<Op, HasAbid, Scaled>,
+  UseCountVgpr_MAI<IsMac>;
 
 let isAsCheapAsAMove = 1, isReMaterializable = 1 in {
   defm V_ACCVGPR_READ_B32  : VOP3Inst<"v_accvgpr_read_b32",  VOPProfileAccRead>;
@@ -1081,33 +1106,66 @@ multiclass MAIInst<string OpName, string P, SDPatternOperator node = null_frag,
   defvar ProfileAGPR = !cast<VOPProfileMAI>("VOPProfileMAI_" # P);
   defvar ProfileVGPR = !cast<VOPProfileMAI>("VOPProfileMAI_" # P # "_VCD");
 
+  // For NoDstOverlap=0 instructions we want to define _mac_e64 alongside _e64
+  // so that ISel can pick the tied form when the C operand has only one use
+  // (which is a sound proxy for "this is the killing use" in SSA, allowing
+  // TwoAddressInstructionPass to keep the tie). When C has multiple uses we
+  // pick _e64 (untied), avoiding an unnecessary copy.
+  //
+  // For NoDstOverlap=1 instructions, the legacy behavior already requires
+  // selecting _mac_e64 (since _e64 has @earlyclobber and a null pattern),
+  // so we keep the original gating: _e64 has no pattern and _mac_e64 is the
+  // sole match.
+  defvar IsMacOnly = NoDstOverlap; // 1 -> only _mac_e64 selectable
+  defvar HasNode = !ne(node, null_frag);
 
   let mayRaiseFPException = 0, ReadsModeReg = 1 in {
     // FP32 denorm mode is respected, rounding mode is not. Exceptions are not supported.
     let Constraints = !if(NoDstOverlap, "@earlyclobber $vdst", "") in {
+      // _e64 / _vgprcd_e64 (untied form). Pattern matches when C has more
+      // than one use; for NoDstOverlap=1 there is no pattern (legacy).
       def _e64 : MAIInst<OpName, ProfileAGPR,
-                         !if(!or(NoDstOverlap, !eq(node, null_frag)), null_frag, AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled>), Scaled>,
+                         !if(!or(NoDstOverlap, !eq(node, null_frag)),
+                             null_frag,
+                             AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled, /*IsMac=*/0>),
+                         Scaled>,
                  MFMATable<0, "AGPR", NAME # "_e64">;
 
       let OtherPredicates = [isGFX90APlus], Mnemonic = OpName in
       def _vgprcd_e64 : MAIInst<OpName # "_vgprcd", ProfileVGPR,
-                                !if(!or(NoDstOverlap, !eq(node, null_frag)), null_frag, VgprMAIFrag<node, HasAbid, Scaled>), Scaled>,
+                                !if(!or(NoDstOverlap, !eq(node, null_frag)),
+                                    null_frag,
+                                    VgprMAIFrag<node, HasAbid, Scaled, /*IsMac=*/0>),
+                                Scaled>,
                         MFMATable<0, "VGPR", NAME # "_vgprcd_e64", NAME # "_e64">;
     }
 
-    if NoDstOverlap then {
-      let Constraints = !if(NoDstOverlap, "$vdst = $src2", ""),
-          isConvertibleToThreeAddress = NoDstOverlap,
-          Mnemonic = OpName in {
-        def "_mac_e64" : MAIInst<OpName # "_mac", ProfileAGPR,
-                                 !if(!eq(node, null_frag), null_frag, AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled>), Scaled>,
-                         MFMATable<1, "AGPR", NAME # "_e64", NAME # "_mac_e64">;
+    // _mac_e64 / _mac_vgprcd_e64 (tied form). Defined unconditionally so that
+    // ISel can choose it when C has a single use. For NoDstOverlap=1 this
+    // matches the legacy behavior; for NoDstOverlap=0 the IsMac=1 predicate
+    // gates selection on hasOneUse.
+    // isConvertibleToThreeAddress allows TwoAddressInstructionPass to revert
+    // a tied _mac_e64 back to _e64 if liveness analysis discovers that C is
+    // still live (which can happen if our hasOneUse() predicate was matched
+    // before later DAG combines extended C's lifetime).
+    let Constraints = "$vdst = $src2",
+        isConvertibleToThreeAddress = 1,
+        Mnemonic = OpName in {
+      defvar MacIsMac = !if(NoDstOverlap, -1, 1);
+      def "_mac_e64" : MAIInst<OpName # "_mac", ProfileAGPR,
+                               !if(!eq(node, null_frag),
+                                   null_frag,
+                                   AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled, MacIsMac>),
+                               Scaled>,
+                       MFMATable<1, "AGPR", NAME # "_e64", NAME # "_mac_e64">;
 
-        let OtherPredicates = [isGFX90APlus] in
-        def _mac_vgprcd_e64 : MAIInst<OpName # "_mac_vgprcd", ProfileVGPR,
-                                      !if(!eq(node, null_frag), null_frag, VgprMAIFrag<node, HasAbid, Scaled>), Scaled>,
-                              MFMATable<1, "VGPR", NAME # "_vgprcd_e64", NAME # "_mac_e64">;
-      }
+      let OtherPredicates = [isGFX90APlus] in
+      def _mac_vgprcd_e64 : MAIInst<OpName # "_mac_vgprcd", ProfileVGPR,
+                                    !if(!eq(node, null_frag),
+                                        null_frag,
+                                        VgprMAIFrag<node, HasAbid, Scaled, MacIsMac>),
+                                    Scaled>,
+                            MFMATable<1, "VGPR", NAME # "_vgprcd_e64", NAME # "_mac_e64">;
     }
   } // mayRaiseFPException = 0, ReadsModeReg = 1
 }
