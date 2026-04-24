@@ -606,6 +606,51 @@ bool SIFoldOperandsImpl::tryFoldImmWithOpSel(MachineInstr *MI, unsigned UseOpNo,
   return false;
 }
 
+// Identity-elimination: rewrite S_ADD/S_OR/S_XOR with one operand being
+// literal 0 as a COPY of the other operand. The original instruction's
+// SCC implicit-def must be dead (no live consumer of the carry/zero flag).
+// Returns true if MI was rewritten.
+static bool tryRewriteAsAddIdentity(MachineInstr *MI, const SIInstrInfo *TII,
+                                    const SIRegisterInfo *TRI) {
+  unsigned Opc = MI->getOpcode();
+  if (Opc != AMDGPU::S_ADD_I32 && Opc != AMDGPU::S_ADD_U32 &&
+      Opc != AMDGPU::S_OR_B32 && Opc != AMDGPU::S_XOR_B32)
+    return false;
+  if (MI->getNumOperands() < 3)
+    return false;
+
+  MachineOperand &Op1 = MI->getOperand(1);
+  MachineOperand &Op2 = MI->getOperand(2);
+
+  unsigned RegSrcIdx = 0;
+  if (Op1.isImm() && Op1.getImm() == 0 && Op2.isReg()) {
+    RegSrcIdx = 2;
+  } else if (Op2.isImm() && Op2.getImm() == 0 && Op1.isReg()) {
+    RegSrcIdx = 1;
+  } else {
+    return false;
+  }
+
+  // The implicit SCC def must be dead.
+  if (MachineOperand *SCC = MI->findRegisterDefOperand(AMDGPU::SCC, TRI))
+    if (!SCC->isDead())
+      return false;
+
+  // Skip subreg complications.
+  if (MI->getOperand(0).getSubReg() != 0)
+    return false;
+
+  Register SrcReg = MI->getOperand(RegSrcIdx).getReg();
+  unsigned SrcSubReg = MI->getOperand(RegSrcIdx).getSubReg();
+
+  MI->setDesc(TII->get(AMDGPU::COPY));
+  MI->getOperand(1).ChangeToRegister(SrcReg, /*isDef=*/false);
+  MI->getOperand(1).setSubReg(SrcSubReg);
+  while (MI->getNumOperands() > 2)
+    MI->removeOperand(2);
+  return true;
+}
+
 bool SIFoldOperandsImpl::updateOperand(FoldCandidate &Fold) const {
   MachineInstr *MI = Fold.UseMI;
   MachineOperand &Old = MI->getOperand(Fold.UseOpNo);
@@ -626,6 +671,7 @@ bool SIFoldOperandsImpl::updateOperand(FoldCandidate &Fold) const {
     if (!TII->isOperandLegal(*MI, OpNo, &New))
       return false;
     Old.ChangeToImmediate(*ImmVal);
+    tryRewriteAsAddIdentity(MI, TII, TRI);
     return true;
   }
 
@@ -693,6 +739,7 @@ bool SIFoldOperandsImpl::updateOperand(FoldCandidate &Fold) const {
       return false;
 
     Old.ChangeToImmediate(*ImmVal);
+    tryRewriteAsAddIdentity(MI, TII, TRI);
     return true;
   }
 

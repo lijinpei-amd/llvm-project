@@ -3855,6 +3855,60 @@ bool SIInstrInfo::foldImmediate(MachineInstr &UseMI, MachineInstr &DefMI,
     return true;
   }
 
+  // Identity-elimination: ADD/OR/XOR with immediate 0 is equivalent to a
+  // copy of the other operand. Rewrite UseMI as a COPY so that
+  // MachineCopyPropagation / RegisterCoalescer can eliminate it. Multi-use
+  // of the immediate def is fine since we only modify UseMI.
+  if (Imm == 0) {
+    unsigned NonZeroIdx = 0;
+    bool IsIdentity = false;
+    switch (Opc) {
+    case AMDGPU::S_ADD_I32:
+    case AMDGPU::S_ADD_U32:
+    case AMDGPU::S_OR_B32:
+    case AMDGPU::S_XOR_B32:
+      if (UseMI.getOperand(1).isReg() && UseMI.getOperand(1).getReg() == Reg) {
+        NonZeroIdx = 2;
+        IsIdentity = true;
+      } else if (UseMI.getOperand(2).isReg() &&
+                 UseMI.getOperand(2).getReg() == Reg) {
+        NonZeroIdx = 1;
+        IsIdentity = true;
+      }
+      if (IsIdentity) {
+        // The other operand must be a register so we can COPY from it.
+        if (!UseMI.getOperand(NonZeroIdx).isReg()) {
+          IsIdentity = false;
+        } else if (MachineOperand *SCCDef =
+                       UseMI.findRegisterDefOperand(AMDGPU::SCC, &RI)) {
+          // For scalar adds the SCC implicit-def must be dead — otherwise
+          // downstream may observe the carry/zero flag computed here.
+          if (!SCCDef->isDead())
+            IsIdentity = false;
+        }
+      }
+      break;
+    default:
+      break;
+    }
+
+    if (IsIdentity) {
+      MachineOperand &Other = UseMI.getOperand(NonZeroIdx);
+      Register SrcReg = Other.getReg();
+      unsigned SrcSubReg = Other.getSubReg();
+      unsigned DstSubReg = UseMI.getOperand(0).getSubReg();
+      if (DstSubReg == 0) {
+        UseMI.setDesc(get(AMDGPU::COPY));
+        UseMI.getOperand(1).ChangeToRegister(SrcReg, /*isDef=*/false);
+        UseMI.getOperand(1).setSubReg(SrcSubReg);
+        // Drop the second source and the implicit-def $scc.
+        while (UseMI.getNumOperands() > 2)
+          UseMI.removeOperand(2);
+        return true;
+      }
+    }
+  }
+
   if (HasMultipleUses)
     return false;
 
@@ -11517,6 +11571,10 @@ void SIInstrInfo::enforceOperandRCAlignment(MachineInstr &MI,
 
 bool SIInstrInfo::isGlobalMemoryObject(const MachineInstr *MI) const {
   if (isIGLP(*MI))
+    return false;
+
+  unsigned Op = MI->getOpcode();
+  if (Op == AMDGPU::ASYNCMARK || Op == AMDGPU::WAIT_ASYNCMARK)
     return false;
 
   return TargetInstrInfo::isGlobalMemoryObject(MI);
