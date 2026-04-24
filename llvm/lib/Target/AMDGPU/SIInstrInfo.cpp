@@ -3594,6 +3594,68 @@ void SIInstrInfo::mutateAndCleanupImplicit(MachineInstr &MI,
     MI.removeOperand(I);
 }
 
+bool SIInstrInfo::tryRewriteAsAddIdentity(MachineInstr &MI,
+                                          Register ZeroReg) const {
+  // Identity-elimination: S_ADD/S_OR/S_XOR with one source being literal 0
+  // (or a register equal to \p ZeroReg, which the caller knows holds 0) is
+  // equivalent to a COPY of the other source. Rewriting to COPY lets
+  // MachineCopyPropagation / RegisterCoalescer eliminate the instruction.
+  // This runs in hot peephole paths (called from the generic PeepholeOptimizer
+  // and from every successful operand fold), so reject as cheaply as possible.
+  unsigned Opc = MI.getOpcode();
+  if (Opc != AMDGPU::S_ADD_I32 && Opc != AMDGPU::S_ADD_U32 &&
+      Opc != AMDGPU::S_OR_B32 && Opc != AMDGPU::S_XOR_B32)
+    return false;
+
+  // All four target opcodes are SOP2_32: dst, src0, src1, implicit-def $scc.
+  // The fixed shape lets us read the source operands by position instead of
+  // doing the OpName-table lookup that getNamedOperand would perform, and
+  // also obviates a getNumOperands() bounds check.
+  MachineOperand &Op1 = MI.getOperand(1);
+  MachineOperand &Op2 = MI.getOperand(2);
+
+  auto IsZero = [&](const MachineOperand &MO) {
+    if (MO.isImm() && MO.getImm() == 0)
+      return true;
+    return ZeroReg && MO.isReg() && MO.getReg() == ZeroReg;
+  };
+
+  unsigned RegSrcIdx;
+  if (IsZero(Op1) && Op2.isReg())
+    RegSrcIdx = 2;
+  else if (IsZero(Op2) && Op1.isReg())
+    RegSrcIdx = 1;
+  else
+    return false;
+
+  // Skip subreg complications on the destination. Deferred until after the
+  // imm-shape match because the overwhelming majority of S_ADD/S_OR/S_XOR
+  // never have a literal-zero source.
+  if (MI.getOperand(0).getSubReg() != 0)
+    return false;
+
+  // SCC is always implicit-def for these scalar opcodes (SOP2 td: `let
+  // Defs = [SCC]`), and the implicit operand is appended to the operand
+  // list — read the trailing operand directly instead of paying the linear
+  // walk in registerDefIsDead / findRegisterDefOperand.
+  const MachineOperand &SCCDef = MI.getOperand(MI.getNumOperands() - 1);
+  assert(SCCDef.isReg() && SCCDef.getReg() == AMDGPU::SCC && SCCDef.isDef() &&
+         SCCDef.isImplicit() &&
+         "expected trailing implicit-def $scc on scalar add/or/xor");
+  if (!SCCDef.isDead())
+    return false;
+
+  Register SrcReg = MI.getOperand(RegSrcIdx).getReg();
+  unsigned SrcSubReg = MI.getOperand(RegSrcIdx).getSubReg();
+
+  MI.getOperand(1).ChangeToRegister(SrcReg, /*isDef=*/false);
+  MI.getOperand(1).setSubReg(SrcSubReg);
+  // setDesc(COPY) and drop the now-extraneous src1 + implicit-def $scc.
+  // mutateAndCleanupImplicit removes from the back so each removal is O(1).
+  mutateAndCleanupImplicit(MI, get(AMDGPU::COPY));
+  return true;
+}
+
 std::optional<int64_t> SIInstrInfo::extractSubregFromImm(int64_t Imm,
                                                          unsigned SubRegIndex) {
   switch (SubRegIndex) {
@@ -3810,6 +3872,13 @@ bool SIInstrInfo::foldImmediate(MachineInstr &UseMI, MachineInstr &DefMI,
     UseMI.addImplicitDefUseOperands(*MF);
     return true;
   }
+
+  // ADD/OR/XOR with immediate 0 is equivalent to a copy of the other source.
+  // Pass Reg as the known-zero source register so the helper recognises a
+  // use of Reg as a zero operand. Multi-use of the immediate def is fine
+  // since we only mutate UseMI on success.
+  if (Imm == 0 && tryRewriteAsAddIdentity(UseMI, Reg))
+    return true;
 
   if (HasMultipleUses)
     return false;

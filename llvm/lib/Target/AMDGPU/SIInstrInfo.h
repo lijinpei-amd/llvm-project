@@ -460,6 +460,14 @@ public:
   bool foldImmediate(MachineInstr &UseMI, MachineInstr &DefMI, Register Reg,
                      MachineRegisterInfo *MRI) const final;
 
+  /// If \p MI is a scalar additive-identity operation (S_ADD/S_OR/S_XOR) with
+  /// one source being literal 0 - or, when \p ZeroReg is non-null, a register
+  /// equal to \p ZeroReg which the caller knows holds 0 - and whose SCC
+  /// implicit-def is dead, rewrite it in place as a COPY of the non-zero
+  /// source. Returns true on rewrite.
+  bool tryRewriteAsAddIdentity(MachineInstr &MI,
+                               Register ZeroReg = Register()) const;
+
   unsigned getMachineCSELookAheadLimit() const override { return 500; }
 
   MachineInstr *convertToThreeAddress(MachineInstr &MI, LiveVariables *LV,

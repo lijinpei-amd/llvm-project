@@ -626,6 +626,11 @@ bool SIFoldOperandsImpl::updateOperand(FoldCandidate &Fold) const {
     if (!TII->isOperandLegal(*MI, OpNo, &New))
       return false;
     Old.ChangeToImmediate(*ImmVal);
+    // Identity-elimination only fires when the folded literal is exactly 0;
+    // gate the call so the (overwhelmingly common) non-zero immediate path
+    // skips the function-call overhead and the opcode test inside.
+    if (*ImmVal == 0)
+      TII->tryRewriteAsAddIdentity(*MI);
     return true;
   }
 
@@ -693,6 +698,8 @@ bool SIFoldOperandsImpl::updateOperand(FoldCandidate &Fold) const {
       return false;
 
     Old.ChangeToImmediate(*ImmVal);
+    if (*ImmVal == 0)
+      TII->tryRewriteAsAddIdentity(*MI);
     return true;
   }
 
