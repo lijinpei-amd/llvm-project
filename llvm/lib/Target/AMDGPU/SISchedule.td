@@ -347,38 +347,70 @@ def : HWVALUWriteRes<WriteTrans64,     4>;
 def : HWVALUWriteRes<WriteIntMul,      1>;
 def : HWVALUWriteRes<Write64Bit,       1>;
 
+// gfx950: V_MFMA and V_CMP take two cycles to issue. Model via NumMicroOps=2
+// (with IssueWidth=1 the scheduler accounts for two issue slots per instr).
+def Write2PassMAI2u : SchedWriteRes<[HWXDL]> {
+  let Latency = 2; let ReleaseAtCycles = [2]; let NumMicroOps = 2;
+}
+def Write4PassMAI2u : SchedWriteRes<[HWXDL]> {
+  let Latency = 4; let ReleaseAtCycles = [4]; let NumMicroOps = 2;
+}
+def Write8PassMAI2u : SchedWriteRes<[HWXDL]> {
+  let Latency = 8; let ReleaseAtCycles = [8]; let NumMicroOps = 2;
+}
+def Write16PassMAI2u : SchedWriteRes<[HWXDL]> {
+  let Latency = 16; let ReleaseAtCycles = [16]; let NumMicroOps = 2;
+}
+def Write4PassDGEMM2u : SchedWriteRes<[HWVALU]> {
+  let Latency = 4; let ReleaseAtCycles = [4]; let NumMicroOps = 2;
+}
+def Write16PassDGEMM2u : SchedWriteRes<[HWVALU]> {
+  let Latency = 16; let ReleaseAtCycles = [16]; let NumMicroOps = 2;
+}
+def WriteVCMP2u : SchedWriteRes<[HWVALU]> {
+  let Latency = 1; let NumMicroOps = 2;
+}
+def WriteLDS2u : SchedWriteRes<[HWLGKM]> {
+  let Latency = 5; let NumMicroOps = 2;
+}
+
 def : InstRW<[WriteCopy], (instrs COPY)>;
 def : InstRW<[Write64Bit], (instregex "^V_ACCVGPR_WRITE_B32_e64$")>;
 // See gfx942 block above: MIMFMARead intentionally omitted on gfx950.
-def : InstRW<[Write2PassMAI],  (instregex "^V_MFMA_.32_4X4X")>;
+def : InstRW<[Write2PassMAI2u],  (instregex "^V_MFMA_.32_4X4X")>;
 
-def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X8X")>;
-def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X16")>;
-def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X32")>;
-def : InstRW<[Write4PassMAI],  (instregex "^V_MFMA_.32_16X16X64")>;
-def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
+def : InstRW<[Write4PassMAI2u],  (instregex "^V_MFMA_.32_16X16X8X")>;
+def : InstRW<[Write4PassMAI2u],  (instregex "^V_MFMA_.32_16X16X16")>;
+def : InstRW<[Write4PassMAI2u],  (instregex "^V_MFMA_.32_16X16X32")>;
+def : InstRW<[Write4PassMAI2u],  (instregex "^V_MFMA_.32_16X16X64")>;
+def : InstRW<[Write8PassMAI2u],  (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
 
-def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X4XF")>;
-def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X8")>;
-def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X16")>;
-def : InstRW<[Write8PassMAI],  (instregex "^V_MFMA_.32_32X32X32_")>;
-def : InstRW<[Write16PassMAI], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
+def : InstRW<[Write8PassMAI2u],  (instregex "^V_MFMA_.32_32X32X4XF")>;
+def : InstRW<[Write8PassMAI2u],  (instregex "^V_MFMA_.32_32X32X8")>;
+def : InstRW<[Write8PassMAI2u],  (instregex "^V_MFMA_.32_32X32X16")>;
+def : InstRW<[Write8PassMAI2u],  (instregex "^V_MFMA_.32_32X32X32_")>;
+def : InstRW<[Write16PassMAI2u], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
 
-def : InstRW<[Write4PassDGEMM],  (instregex "^V_MFMA_.64_4X4X")>;
-def : InstRW<[Write16PassDGEMM], (instregex "^V_MFMA_.64_16X16X")>;
+def : InstRW<[Write4PassDGEMM2u],  (instregex "^V_MFMA_.64_4X4X")>;
+def : InstRW<[Write16PassDGEMM2u], (instregex "^V_MFMA_.64_16X16X")>;
 
-def : InstRW<[Write4PassMAI],  (instregex "^V_SMFMAC_.32_16X16X")>;
-def : InstRW<[Write8PassMAI],  (instregex "^V_SMFMAC_.32_32X32X")>;
+def : InstRW<[Write4PassMAI2u],  (instregex "^V_SMFMAC_.32_16X16X")>;
+def : InstRW<[Write8PassMAI2u],  (instregex "^V_SMFMAC_.32_32X32X")>;
+
+def : InstRW<[WriteVCMP2u], (instregex "^V_CMP_")>;
+def : InstRW<[WriteVCMP2u], (instregex "^V_CMPX_")>;
+
+def : InstRW<[WriteLDS2u], (instregex "^DS_READ_")>;
 
 
 // If either matrix format is f8, the instruction takes 2x as many
 // cycles. TODO: This isn't reflected in MCA.
 def WriteMFMAScale_16X16X128_F8F6F4 : SchedWriteVariant<[
-    SchedVar<PredIsF8_MFMA_SCALE, [Write8PassMAI]>,
-    SchedVar<NoSchedPred, [Write4PassMAI]>]>;
+    SchedVar<PredIsF8_MFMA_SCALE, [Write8PassMAI2u]>,
+    SchedVar<NoSchedPred, [Write4PassMAI2u]>]>;
 def WriteMFMAScale_32X32X64_F8F6F4 : SchedWriteVariant<[
-    SchedVar<PredIsF8_MFMA_SCALE, [Write16PassMAI]>,
-    SchedVar<NoSchedPred, [Write8PassMAI]>]>;
+    SchedVar<PredIsF8_MFMA_SCALE, [Write16PassMAI2u]>,
+    SchedVar<NoSchedPred, [Write8PassMAI2u]>]>;
 
 def : InstRW<[WriteMFMAScale_16X16X128_F8F6F4],
        (instregex "^V_MFMA(_SCALE)?_.32_16X16X128_F8F6F4")>;
