@@ -390,7 +390,7 @@ multiclass FLAT_Global_Store_Pseudo_t16<string opName> {
 
 // Async loads, introduced in gfx1250, will store directly
 // to a DS address in vdst (they will not use M0 for DS addess).
-class FLAT_Global_Load_LDS_Pseudo <string opName, bit EnableSaddr = 0, bit IsAsync = 0, bit IsLegacyLDSDMA = 0> : FLAT_Pseudo<
+class FLAT_Global_Load_LDS_Pseudo <string opName, bit EnableSaddr = 0, bit IsAsync = 0, bit IsLegacyLDSDMA = 0, bit IsGFX9Async = 0> : FLAT_Pseudo<
   opName,
   (outs ),
   !con(
@@ -400,6 +400,9 @@ class FLAT_Global_Load_LDS_Pseudo <string opName, bit EnableSaddr = 0, bit IsAsy
        !if(IsLegacyLDSDMA, (ins i1imm_0:$IsAsync), (ins))),
   !if(IsAsync, " $vdst,", "")#" $vaddr"#!if(EnableSaddr, ", $saddr", ", off")#"$offset$cpol"> {
   let LGKM_CNT = 0;
+  // IsGFX9Async is a pure modeling fiction: keep VM_CNT/ASYNC_CNT TSFlags
+  // unchanged so SIInsertWaitcnts treats the pseudo like a normal gfx9
+  // LDS-DMA load (and never tries to emit S_WAIT_ASYNCCNT, gfx12+ only).
   let VM_CNT = !not(IsAsync);
   let ASYNC_CNT = IsAsync;
   let is_flat_global = 1;
@@ -412,15 +415,17 @@ class FLAT_Global_Load_LDS_Pseudo <string opName, bit EnableSaddr = 0, bit IsAsy
   let enabled_saddr = EnableSaddr;
   let VALU = 1;
   let PseudoInstr = opName#!if(EnableSaddr, "_SADDR", "");
-  let Uses = !if(IsAsync, [EXEC, ASYNCcnt], [M0, EXEC]);
-  let Defs = !if(IsAsync, [ASYNCcnt], []);
+  let Uses = !if(IsGFX9Async, [M0, EXEC, GFX9_ASYNCcnt],
+                  !if(IsAsync, [EXEC, ASYNCcnt], [M0, EXEC]));
+  let Defs = !if(IsGFX9Async, [GFX9_ASYNCcnt],
+                  !if(IsAsync, [ASYNCcnt], []));
   let SchedRW = [WriteVMEM, WriteLDS];
 }
 
-multiclass FLAT_Global_Load_LDS_Pseudo<string opName, bit IsAsync = 0, bit IsLegacyLDSDMA = 0> {
-  def ""     : FLAT_Global_Load_LDS_Pseudo<opName, 0, IsAsync, IsLegacyLDSDMA>,
+multiclass FLAT_Global_Load_LDS_Pseudo<string opName, bit IsAsync = 0, bit IsLegacyLDSDMA = 0, bit IsGFX9Async = 0> {
+  def ""     : FLAT_Global_Load_LDS_Pseudo<opName, 0, IsAsync, IsLegacyLDSDMA, IsGFX9Async>,
     GlobalSaddrTable<0, opName>;
-  def _SADDR : FLAT_Global_Load_LDS_Pseudo<opName, 1, IsAsync, IsLegacyLDSDMA>,
+  def _SADDR : FLAT_Global_Load_LDS_Pseudo<opName, 1, IsAsync, IsLegacyLDSDMA, IsGFX9Async>,
     GlobalSaddrTable<1, opName>;
 }
 
@@ -695,7 +700,8 @@ multiclass FLAT_Scratch_Store_Pseudo_t16<string opName> {
 
 class FLAT_Scratch_Load_LDS_Pseudo <string opName, bit EnableSaddr = 0,
   bit EnableSVE = 0,
-  bit EnableVaddr = !or(EnableSVE, !not(EnableSaddr))> : FLAT_Pseudo<
+  bit EnableVaddr = !or(EnableSVE, !not(EnableSaddr)),
+  bit IsGFX9Async = 0> : FLAT_Pseudo<
   opName,
   (outs ),
   !if(EnableSVE,
@@ -720,18 +726,19 @@ class FLAT_Scratch_Load_LDS_Pseudo <string opName, bit EnableSaddr = 0,
   let has_sve = EnableSVE;
   let sve = EnableVaddr;
   let VALU = 1;
-  let Uses = [M0, EXEC];
+  let Uses = !if(IsGFX9Async, [M0, EXEC, GFX9_ASYNCcnt], [M0, EXEC]);
+  let Defs = !if(IsGFX9Async, [GFX9_ASYNCcnt], []);
   let SchedRW = [WriteVMEM, WriteLDS];
 }
 
-multiclass FLAT_Scratch_Load_LDS_Pseudo<string opName> {
-  def ""     : FLAT_Scratch_Load_LDS_Pseudo<opName>,
+multiclass FLAT_Scratch_Load_LDS_Pseudo<string opName, bit IsGFX9Async = 0> {
+  def ""     : FLAT_Scratch_Load_LDS_Pseudo<opName, 0, 0, 1, IsGFX9Async>,
                FlatScratchInst<opName, "SV">;
-  def _SADDR : FLAT_Scratch_Load_LDS_Pseudo<opName, 1>,
+  def _SADDR : FLAT_Scratch_Load_LDS_Pseudo<opName, 1, 0, 0, IsGFX9Async>,
                FlatScratchInst<opName, "SS">;
-  def _SVS   : FLAT_Scratch_Load_LDS_Pseudo<opName, 1, 1>,
+  def _SVS   : FLAT_Scratch_Load_LDS_Pseudo<opName, 1, 1, 1, IsGFX9Async>,
                FlatScratchInst<opName, "SVS">;
-  def _ST    : FLAT_Scratch_Load_LDS_Pseudo<opName, 0, 0, 0>,
+  def _ST    : FLAT_Scratch_Load_LDS_Pseudo<opName, 0, 0, 0, IsGFX9Async>,
                FlatScratchInst<opName, "ST">;
 }
 
@@ -1225,6 +1232,16 @@ defm GLOBAL_LOAD_LDS_DWORDX3 : FLAT_Global_Load_LDS_Pseudo <"global_load_lds_dwo
 defm GLOBAL_LOAD_LDS_DWORDX4 : FLAT_Global_Load_LDS_Pseudo <"global_load_lds_dwordx4", 0, 1>;
 }
 
+// gfx950-only fake-async GLOBAL_LOAD_LDS variants for dep-graph modeling
+// via GFX9_ASYNCcnt. Pseudo-only, no real encoding.
+let SubtargetPredicate = HasGFX950Insts in {
+defm GLOBAL_LOAD_LDS_UBYTE_ASYNC  : FLAT_Global_Load_LDS_Pseudo <"global_load_lds_ubyte_async",  0, 1, 1>;
+defm GLOBAL_LOAD_LDS_SBYTE_ASYNC  : FLAT_Global_Load_LDS_Pseudo <"global_load_lds_sbyte_async",  0, 1, 1>;
+defm GLOBAL_LOAD_LDS_USHORT_ASYNC : FLAT_Global_Load_LDS_Pseudo <"global_load_lds_ushort_async", 0, 1, 1>;
+defm GLOBAL_LOAD_LDS_SSHORT_ASYNC : FLAT_Global_Load_LDS_Pseudo <"global_load_lds_sshort_async", 0, 1, 1>;
+defm GLOBAL_LOAD_LDS_DWORD_ASYNC  : FLAT_Global_Load_LDS_Pseudo <"global_load_lds_dword_async",  0, 1, 1>;
+}
+
 let SubtargetPredicate = isGFX12PlusNot12_50 in
   defm GLOBAL_ATOMIC_ORDERED_ADD_B64 : FLAT_Global_Atomic_Pseudo <"global_atomic_ordered_add_b64", VGPROp_64, i64>;
 
@@ -1290,6 +1307,16 @@ defm SCRATCH_LOAD_LDS_SBYTE  : FLAT_Scratch_Load_LDS_Pseudo <"scratch_load_lds_s
 defm SCRATCH_LOAD_LDS_USHORT : FLAT_Scratch_Load_LDS_Pseudo <"scratch_load_lds_ushort">;
 defm SCRATCH_LOAD_LDS_SSHORT : FLAT_Scratch_Load_LDS_Pseudo <"scratch_load_lds_sshort">;
 defm SCRATCH_LOAD_LDS_DWORD  : FLAT_Scratch_Load_LDS_Pseudo <"scratch_load_lds_dword">;
+
+// gfx950-only fake-async SCRATCH_LOAD_LDS variants for dep-graph modeling
+// via GFX9_ASYNCcnt. Pseudo-only, no real encoding.
+let SubtargetPredicate = HasGFX950Insts in {
+defm SCRATCH_LOAD_LDS_UBYTE_ASYNC  : FLAT_Scratch_Load_LDS_Pseudo <"scratch_load_lds_ubyte_async",  1>;
+defm SCRATCH_LOAD_LDS_SBYTE_ASYNC  : FLAT_Scratch_Load_LDS_Pseudo <"scratch_load_lds_sbyte_async",  1>;
+defm SCRATCH_LOAD_LDS_USHORT_ASYNC : FLAT_Scratch_Load_LDS_Pseudo <"scratch_load_lds_ushort_async", 1>;
+defm SCRATCH_LOAD_LDS_SSHORT_ASYNC : FLAT_Scratch_Load_LDS_Pseudo <"scratch_load_lds_sshort_async", 1>;
+defm SCRATCH_LOAD_LDS_DWORD_ASYNC  : FLAT_Scratch_Load_LDS_Pseudo <"scratch_load_lds_dword_async",  1>;
+}
 
 let SubtargetPredicate = isGFX125xOnly in {
 defm FLAT_LOAD_MONITOR_B32    : FLAT_Flat_Load_Pseudo <"flat_load_monitor_b32",  VGPROp_32>;

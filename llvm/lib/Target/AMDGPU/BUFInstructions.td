@@ -499,7 +499,8 @@ class MUBUF_Load_Pseudo <string opName,
                          bit isTFE = 0,
                          bit hasRestrictedSOffset = 0,
                          list<dag> pattern=[],
-                         RegisterOperand vdata_op = getBUFVDataRegisterOperand<vdata_vt.Size, isTFE>.ret>
+                         RegisterOperand vdata_op = getBUFVDataRegisterOperand<vdata_vt.Size, isTFE>.ret,
+                         bit isAsync = 0>
   : MUBUF_Pseudo<opName,
                  !if(!or(isLds, isLdsOpc), (outs), (outs vdata_op:$vdata)),
                  !con(getMUBUFIns<addrKind, [], isTFE, hasRestrictedSOffset, 0, isLds>.ret,
@@ -507,8 +508,8 @@ class MUBUF_Load_Pseudo <string opName,
                  getMUBUFAsmOps<addrKind, !or(isLds, isLdsOpc), isLds, isTFE>.ret,
                  pattern>,
     MUBUF_SetupAddr<addrKind> {
-  let PseudoInstr = opName # !if(isLds, "_lds", "") # !if(isTFE, "_tfe", "") #
-                    "_" # getAddrName<addrKind>.ret;
+  let PseudoInstr = opName # !if(isAsync, "_lds_async", !if(isLds, "_lds", "")) #
+                    !if(isTFE, "_tfe", "") # "_" # getAddrName<addrKind>.ret;
   let AsmMatchConverter = "cvtMubuf";
 
   let Constraints = !if(HasTiedDest, "$vdata = $vdata_in", "");
@@ -516,7 +517,9 @@ class MUBUF_Load_Pseudo <string opName,
   let has_vdata = !not(!or(isLds, isLdsOpc));
   let mayLoad = 1;
   let mayStore = isLds;
-  let Uses = !if(!or(isLds, isLdsOpc) , [EXEC, M0], [EXEC]);
+  let Uses = !if(isAsync, [EXEC, M0, GFX9_ASYNCcnt],
+                 !if(!or(isLds, isLdsOpc), [EXEC, M0], [EXEC]));
+  let Defs = !if(isAsync, [GFX9_ASYNCcnt], []);
   let tfe = isTFE;
   let lds = isLds;
   let elements = getMUBUFElements<vdata_vt>.ret;
@@ -548,24 +551,27 @@ multiclass MUBUF_Pseudo_Load_Pats<string BaseInst, ValueType load_vt = i32, SDPa
 }
 
 multiclass MUBUF_Pseudo_Loads_Helper<string opName, ValueType load_vt,
-                                     bit TiedDest, bit isLds, bit isTFE, bit hasRestrictedSOffset> {
+                                     bit TiedDest, bit isLds, bit isTFE, bit hasRestrictedSOffset,
+                                     bit isAsync = 0> {
   defvar legal_load_vt = !if(!eq(load_vt, v3f16), v4f16, load_vt);
+  defvar tag_suffix = !if(isAsync, "_LDS_ASYNC", !if(isLds, "_LDS", ""));
+  defvar vdata_op = getBUFVDataRegisterOperand<legal_load_vt.Size, isTFE>.ret;
 
-  def _OFFSET : MUBUF_Load_Pseudo <opName, BUFAddrKind.Offset, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset>,
-    MUBUFAddr64Table<0, NAME # !if(isLds, "_LDS", "")>;
+  def _OFFSET : MUBUF_Load_Pseudo <opName, BUFAddrKind.Offset, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset, [], vdata_op, isAsync>,
+    MUBUFAddr64Table<0, NAME # tag_suffix>;
 
-  def _ADDR64 : MUBUF_Load_Pseudo <opName, BUFAddrKind.Addr64, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset>,
-    MUBUFAddr64Table<1, NAME # !if(isLds, "_LDS", "")>;
+  def _ADDR64 : MUBUF_Load_Pseudo <opName, BUFAddrKind.Addr64, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset, [], vdata_op, isAsync>,
+    MUBUFAddr64Table<1, NAME # tag_suffix>;
 
-  def _OFFEN  : MUBUF_Load_Pseudo <opName, BUFAddrKind.OffEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset>;
-  def _IDXEN  : MUBUF_Load_Pseudo <opName, BUFAddrKind.IdxEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset>;
-  def _BOTHEN : MUBUF_Load_Pseudo <opName, BUFAddrKind.BothEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset>;
+  def _OFFEN  : MUBUF_Load_Pseudo <opName, BUFAddrKind.OffEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset, [], vdata_op, isAsync>;
+  def _IDXEN  : MUBUF_Load_Pseudo <opName, BUFAddrKind.IdxEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset, [], vdata_op, isAsync>;
+  def _BOTHEN : MUBUF_Load_Pseudo <opName, BUFAddrKind.BothEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset, [], vdata_op, isAsync>;
 
   let DisableWQM = 1 in {
-    def _OFFSET_exact : MUBUF_Load_Pseudo <opName, BUFAddrKind.Offset, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset>;
-    def _OFFEN_exact  : MUBUF_Load_Pseudo <opName, BUFAddrKind.OffEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset>;
-    def _IDXEN_exact  : MUBUF_Load_Pseudo <opName, BUFAddrKind.IdxEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset>;
-    def _BOTHEN_exact : MUBUF_Load_Pseudo <opName, BUFAddrKind.BothEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset>;
+    def _OFFSET_exact : MUBUF_Load_Pseudo <opName, BUFAddrKind.Offset, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset, [], vdata_op, isAsync>;
+    def _OFFEN_exact  : MUBUF_Load_Pseudo <opName, BUFAddrKind.OffEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset, [], vdata_op, isAsync>;
+    def _IDXEN_exact  : MUBUF_Load_Pseudo <opName, BUFAddrKind.IdxEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset, [], vdata_op, isAsync>;
+    def _BOTHEN_exact : MUBUF_Load_Pseudo <opName, BUFAddrKind.BothEn, legal_load_vt, TiedDest, isLds, 0, isTFE, hasRestrictedSOffset, [], vdata_op, isAsync>;
   }
 }
 
@@ -597,11 +603,11 @@ multiclass MUBUF_Pseudo_Loads_Helper_t16<string opName, string Hi16Name, string 
 }
 
 multiclass MUBUF_Pseudo_Loads<string opName, ValueType load_vt = i32,
-                              bit TiedDest = 0, bit isLds = 0> {
-  defm NAME : MUBUF_Pseudo_Loads_Helper<opName, load_vt, TiedDest, isLds, 0, 0>;
-  defm _VBUFFER : MUBUF_Pseudo_Loads_Helper<opName, load_vt, TiedDest, isLds, 0, 1>;
+                              bit TiedDest = 0, bit isLds = 0, bit isAsync = 0> {
+  defm NAME : MUBUF_Pseudo_Loads_Helper<opName, load_vt, TiedDest, isLds, 0, 0, isAsync>;
+  defm _VBUFFER : MUBUF_Pseudo_Loads_Helper<opName, load_vt, TiedDest, isLds, 0, 1, isAsync>;
 
-  if !not(isLds) then {
+  if !and(!not(isLds), !not(isAsync)) then {
     defm _TFE : MUBUF_Pseudo_Loads_Helper<opName, load_vt, TiedDest, isLds, 1, 0>;
     defm _TFE_VBUFFER : MUBUF_Pseudo_Loads_Helper<opName, load_vt, TiedDest, isLds, 1, 1>;
   }
@@ -635,6 +641,12 @@ multiclass MUBUF_Pseudo_Loads_Lds<string opName, ValueType load_vt = i32, Predic
     defm _LDS : MUBUF_Pseudo_Loads<opName, load_vt, 0, 1>;
   }
 
+  // gfx950-only async LDS variant: pseudo-only, uses/defs the fake
+  // GFX9_ASYNCcnt register so scheduler enforces ordering between
+  // back-to-back async buffer-load-to-LDS ops.
+  let SubtargetPredicate = HasGFX950Insts in {
+    defm _LDS_ASYNC : MUBUF_Pseudo_Loads<opName, load_vt, 0, 1, 1>;
+  }
 }
 
 class MUBUF_Store_Pseudo <string opName,
@@ -749,7 +761,7 @@ multiclass MUBUF_Pseudo_Stores_t16<string opName, ValueType store_vt = i32> {
   }
 }
 
-class MUBUF_Pseudo_Store_Lds<string opName>
+class MUBUF_Pseudo_Store_Lds<string opName, bit isAsync = 0>
   : MUBUF_Pseudo<opName,
                  (outs),
                  (ins SReg_128_XNULL:$srsrc, SCSrc_b32:$soffset, Offset:$offset, CPol:$cpol, i1imm:$swz),
@@ -763,7 +775,8 @@ class MUBUF_Pseudo_Store_Lds<string opName>
   let lds = 1;
   let VALU = 1;
 
-  let Uses = [EXEC, M0];
+  let Uses = !if(isAsync, [EXEC, M0, GFX9_ASYNCcnt], [EXEC, M0]);
+  let Defs = !if(isAsync, [GFX9_ASYNCcnt], []);
   let AsmMatchConverter = "cvtMubuf";
 }
 
@@ -1189,6 +1202,10 @@ let OtherPredicates = [HasGFX10_BEncoding] in {
 
 let SubtargetPredicate = isGFX8GFX9NotGFX940 in {
 def BUFFER_STORE_LDS_DWORD : MUBUF_Pseudo_Store_Lds <"buffer_store_lds_dword">;
+}
+
+let SubtargetPredicate = HasGFX950Insts in {
+def BUFFER_STORE_LDS_DWORD_ASYNC : MUBUF_Pseudo_Store_Lds <"buffer_store_lds_dword_async", 1>;
 }
 
 let SubtargetPredicate = isGFX6 in { // isn't on CI & VI
