@@ -2408,7 +2408,20 @@ bool AMDGPUInstructionSelector::selectG_INTRINSIC_W_SIDE_EFFECTS(
   case Intrinsic::amdgcn_tensor_load_to_lds:
   case Intrinsic::amdgcn_tensor_store_from_lds:
     return selectTensorLoadStore(I, IntrinsicID);
-  case Intrinsic::amdgcn_asyncmark:
+  case Intrinsic::amdgcn_asyncmark: {
+    if (!Subtarget->hasAsyncMark())
+      return false;
+    // Selected here so the MI carries hasSideEffects = 0 (a TableGen
+    // pattern would inherit it from the intrinsic's IntrHasSideEffects).
+    auto MIB = BuildMI(*I.getParent(), &I, I.getDebugLoc(),
+                       TII.get(AMDGPU::ASYNCMARK));
+    // Match the dead-marking that SDAG and TableGen-emitted matchers apply
+    // to other $asynccnt-defining instructions.
+    MIB->addRegisterDead(AMDGPU::GFX9_ASYNCcnt, &TRI);
+    MIB->addRegisterDead(AMDGPU::ASYNCcnt, &TRI);
+    I.eraseFromParent();
+    return true;
+  }
   case Intrinsic::amdgcn_wait_asyncmark:
     if (!Subtarget->hasAsyncMark())
       return false;
