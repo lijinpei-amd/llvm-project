@@ -660,9 +660,9 @@ public:
       return false;
     if (SIInstrInfo::usesASYNC_CNT(MI))
       return true;
-    const MachineOperand *Async =
-        TII.getNamedOperand(MI, AMDGPU::OpName::IsAsync);
-    return Async && (Async->getImm());
+    // gfx9 async LDS-DMA pseudos signal async-ness via GFX9_ASYNCcnt.
+    return MI.readsRegister(AMDGPU::GFX9_ASYNCcnt,
+                            MI.getMF()->getSubtarget().getRegisterInfo());
   }
 
   bool isNonAsyncLdsDmaWrite(const MachineInstr &MI) const {

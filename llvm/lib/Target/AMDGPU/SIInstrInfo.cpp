@@ -10510,6 +10510,10 @@ int SIInstrInfo::pseudoToMCOpcode(int Opcode) const {
       Opcode = MFMAOp;
   }
 
+  // Async LDS-DMA pseudos share the encoding of their non-async sibling.
+  if (int NonAsync = AMDGPU::getLdsDMANonAsyncOp(Opcode); NonAsync != -1)
+    Opcode = NonAsync;
+
   int32_t MCOp = AMDGPU::getMCOpcode(Opcode, Gen);
 
   if (MCOp == AMDGPU::INSTRUCTION_LIST_END && ST.hasGFX11_7Insts())

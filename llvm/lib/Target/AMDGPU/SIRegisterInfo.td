@@ -274,6 +274,9 @@ def MODE : SIReg <"mode", 0>;
 // Not addressable, used to model dependencies.
 def ASYNCcnt : SIReg <"ASYNCcnt", 0>;
 def TENSORcnt : SIReg <"TENSORcnt", 0>;
+// Fake counter for modeling gfx950 async load-to-LDS ordering deps across
+// MUBUF, GLOBAL, and SCRATCH pseudos. Not encoded; reserved unconditionally.
+def GFX9_ASYNCcnt : SIReg <"gfx9_asynccnt", 0>;
 
 def LDS_DIRECT : SIReg <"src_lds_direct", 254> {
   // There is no physical register corresponding to this. This is an

@@ -1274,8 +1274,6 @@ def CPol_NonGLC : ValuePredicatedOperand<CPol, "!(Op.getImm() & CPol::GLC)", 1>;
 def CPol_GLC_WithDefault : DefaultOperand<CPol_GLC, !shl(1, CPolBit.GLC)>;
 def CPol_NonGLC_WithDefault : DefaultOperand<CPol_NonGLC, 0>;
 
-def IsAsync : NamedBitOperand<"isasync">;
-
 def TFE : NamedBitOperand<"tfe">;
 def UNorm : NamedBitOperand<"unorm">;
 def DA : NamedBitOperand<"da">;
@@ -3415,6 +3413,42 @@ def getIfAddr64Inst : InstrMapping {
   let ColFields = ["IsAddr64"];
   let KeyCol = ["1"];
   let ValueCols = [["1"]];
+}
+
+// Maps a MUBUF LDS-DMA load pseudo to its gfx950 _LDS_ASYNC_* sibling.
+def getMUBUFLdsAsyncOp : InstrMapping {
+  let FilterClass = "MUBUFLdsAsyncTable";
+  let RowFields = ["LdsOpName"];
+  let ColFields = ["IsAsync"];
+  let KeyCol = ["0"];
+  let ValueCols = [["1"]];
+}
+
+// Inverse of getMUBUFLdsAsyncOp.
+def getMUBUFLdsNonAsyncOp : InstrMapping {
+  let FilterClass = "MUBUFLdsAsyncTable";
+  let RowFields = ["LdsOpName"];
+  let ColFields = ["IsAsync"];
+  let KeyCol = ["1"];
+  let ValueCols = [["0"]];
+}
+
+// Maps a FLAT GLOBAL_LOAD_LDS_* pseudo to its gfx950 _ASYNC sibling.
+def getFLATGlobalLdsAsyncOp : InstrMapping {
+  let FilterClass = "FLATGlobalLdsAsyncTable";
+  let RowFields = ["FlatGlobalLdsOpName"];
+  let ColFields = ["IsAsync"];
+  let KeyCol = ["0"];
+  let ValueCols = [["1"]];
+}
+
+// Inverse of getFLATGlobalLdsAsyncOp.
+def getFLATGlobalLdsNonAsyncOp : InstrMapping {
+  let FilterClass = "FLATGlobalLdsAsyncTable";
+  let RowFields = ["FlatGlobalLdsOpName"];
+  let ColFields = ["IsAsync"];
+  let KeyCol = ["1"];
+  let ValueCols = [["0"]];
 }
 
 // Maps a GLOBAL to its SADDR form.

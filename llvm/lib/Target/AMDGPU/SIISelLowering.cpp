@@ -12310,6 +12310,12 @@ SDValue SITargetLowering::LowerINTRINSIC_VOID(SDValue Op,
       break;
     }
 
+    if (isAsyncLDSDMA(IntrinsicID)) {
+      int AsyncOpc = AMDGPU::getLdsDMAAsyncOp(Opc);
+      assert(AsyncOpc != -1 && "LDS-DMA async sibling missing");
+      Opc = AsyncOpc;
+    }
+
     SDValue M0Val = copyToM0(DAG, Chain, DL, Op.getOperand(3));
 
     SmallVector<SDValue, 8> Ops;
@@ -12337,8 +12343,6 @@ SDValue SITargetLowering::LowerINTRINSIC_VOID(SDValue Op,
             ? 1
             : 0,
         DL, MVT::i8));                                           // swz
-    Ops.push_back(
-        DAG.getTargetConstant(isAsyncLDSDMA(IntrinsicID), DL, MVT::i8));
     Ops.push_back(M0Val.getValue(0));                            // Chain
     Ops.push_back(M0Val.getValue(1));                            // Glue
 
@@ -12418,13 +12422,17 @@ SDValue SITargetLowering::LowerINTRINSIC_VOID(SDValue Op,
       Ops.push_back(VOffset);
     }
 
+    if (isAsyncLDSDMA(IntrinsicID)) {
+      int AsyncOpc = AMDGPU::getLdsDMAAsyncOp(Opc);
+      assert(AsyncOpc != -1 && "LDS-DMA async sibling missing");
+      Opc = AsyncOpc;
+    }
+
     Ops.push_back(Op.getOperand(5));  // Offset
 
     unsigned Aux = Op.getConstantOperandVal(6);
     Ops.push_back(DAG.getTargetConstant(Aux & ~AMDGPU::CPol::VIRTUAL_BITS, DL,
                                         MVT::i32)); // CPol
-    Ops.push_back(
-        DAG.getTargetConstant(isAsyncLDSDMA(IntrinsicID), DL, MVT::i8));
 
     Ops.push_back(M0Val.getValue(0)); // Chain
     Ops.push_back(M0Val.getValue(1)); // Glue

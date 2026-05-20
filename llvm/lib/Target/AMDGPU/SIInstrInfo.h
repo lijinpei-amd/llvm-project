@@ -1837,6 +1837,33 @@ namespace AMDGPU {
   int32_t getIfAddr64Inst(uint32_t Opcode);
 
   LLVM_READONLY
+  int32_t getMUBUFLdsAsyncOp(uint32_t Opcode);
+
+  LLVM_READONLY
+  int32_t getMUBUFLdsNonAsyncOp(uint32_t Opcode);
+
+  LLVM_READONLY
+  int32_t getFLATGlobalLdsAsyncOp(uint32_t Opcode);
+
+  LLVM_READONLY
+  int32_t getFLATGlobalLdsNonAsyncOp(uint32_t Opcode);
+
+  /// Returns the fake-async sibling of an LDS-DMA load opcode (MUBUF or
+  /// FLAT), or -1 if \p Opcode has no such sibling.
+  inline int getLdsDMAAsyncOp(unsigned Opcode) {
+    if (int A = getMUBUFLdsAsyncOp(Opcode); A != -1)
+      return A;
+    return getFLATGlobalLdsAsyncOp(Opcode);
+  }
+
+  /// Inverse of getLdsDMAAsyncOp.
+  inline int getLdsDMANonAsyncOp(unsigned Opcode) {
+    if (int N = getMUBUFLdsNonAsyncOp(Opcode); N != -1)
+      return N;
+    return getFLATGlobalLdsNonAsyncOp(Opcode);
+  }
+
+  LLVM_READONLY
   int32_t getSOPKOp(uint32_t Opcode);
 
   /// \returns SADDR form of a FLAT Global instruction given an \p Opcode
