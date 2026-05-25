@@ -124,8 +124,8 @@ define float @struct.ptr.buffer.load.vgpr.lds(ptr addrspace(8) inreg %rsrc, ptr 
 ; CHECK-NEXT:    s_mov_b32 m0, s4
 ; CHECK-NEXT:    s_nop 0
 ; CHECK-NEXT:    buffer_load_dword v1, s[16:19], 0 idxen lds
-; CHECK-NEXT:    ; asyncmark
 ; CHECK-NEXT:    ds_read_b32 v0, v0
+; CHECK-NEXT:    ; asyncmark
 ; CHECK-NEXT:    s_waitcnt vmcnt(0) lgkmcnt(0)
 ; CHECK-NEXT:    s_setpc_b64 s[30:31]
 main_body:
