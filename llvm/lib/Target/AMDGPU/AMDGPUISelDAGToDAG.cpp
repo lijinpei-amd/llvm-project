@@ -3356,6 +3356,14 @@ void AMDGPUDAGToDAGISel::SelectINTRINSIC_VOID(SDNode *N) {
   case Intrinsic::amdgcn_tensor_store_from_lds:
     SelectTensorLoadStore(N, IntrID);
     return;
+  case Intrinsic::amdgcn_asyncmark: {
+    if (!Subtarget->hasAsyncMark())
+      break;
+    // Selected here so the MI carries hasSideEffects = 0 (a TableGen
+    // pattern would inherit it from the intrinsic's IntrHasSideEffects).
+    CurDAG->SelectNodeTo(N, AMDGPU::ASYNCMARK, MVT::Other, N->getOperand(0));
+    return;
+  }
   default:
     break;
   }
