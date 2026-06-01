@@ -24,6 +24,7 @@
 #include "llvm/Analysis/BlockFrequencyInfoImpl.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/IR/Argument.h"
+#include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constant.h"
@@ -77,6 +78,8 @@ using ProfileCount = Function::ProfileCount;
 static cl::opt<bool>
 AggregateArgsOpt("aggregate-extracted-args", cl::Hidden,
                  cl::desc("Aggregate arguments to code-extracted functions"));
+
+static void fixupDeoptimizeCalls(Function *NewFunc);
 
 /// Test whether a block is valid for extraction.
 static bool isBlockValidForExtraction(const BasicBlock &BB,
@@ -844,6 +847,13 @@ void CodeExtractor::severSplitPHINodesOfExits() {
 void CodeExtractor::splitReturnBlocks() {
   for (BasicBlock *Block : Blocks)
     if (ReturnInst *RI = dyn_cast<ReturnInst>(Block->getTerminator())) {
+      // A block tail-calling @llvm.experimental.deoptimize must keep the
+      // deoptimize call and its return together: the verifier requires the
+      // call to be immediately followed by a return of the value it computes.
+      // Leave such a block in the region so it terminates the outlined
+      // function; fixupDeoptimizeCalls() later adjusts the return type.
+      if (Block->getTerminatingDeoptimizeCall())
+        continue;
       BasicBlock *New =
           Block->splitBasicBlock(RI->getIterator(), Block->getName() + ".ret");
       if (DT) {
@@ -1547,6 +1557,10 @@ CodeExtractor::extractCodeRegion(const CodeExtractorAnalysisCache &CEAC,
   emitFunctionBody(inputs, outputs, StructValues, newFunction, StructTy, header,
                    SinkingCands, NewValues);
 
+  // Adjust any @llvm.experimental.deoptimize calls that were moved into the
+  // outlined function so their return type matches the new function.
+  fixupDeoptimizeCalls(newFunction);
+
   std::vector<Value *> Reloads;
   CallInst *TheCall = emitReplacerCall(
       inputs, outputs, StructValues, newFunction, StructTy, oldFunction, ReplIP,
@@ -1613,6 +1627,55 @@ Type *CodeExtractor::getSwitchType() {
     return Type::getInt1Ty(Context);
   default:
     return Type::getInt16Ty(Context);
+  }
+}
+
+/// Fix up any @llvm.experimental.deoptimize calls that terminate blocks of the
+/// extracted function \p NewFunc. Such a call must be immediately followed by a
+/// return of the value it computes, and its type must match the enclosing
+/// function's return type. Extraction may give the outlined function a return
+/// type (a control-flow identifier) that differs from the original, so re-create
+/// the intrinsic with the new return type. This mirrors the handling in the
+/// inliner (see InlineFunction).
+static void fixupDeoptimizeCalls(Function *NewFunc) {
+  Type *RetTy = NewFunc->getReturnType();
+  Function *NewDeoptIntrinsic = nullptr;
+
+  for (BasicBlock &BB : *NewFunc) {
+    CallInst *DeoptCall = BB.getTerminatingDeoptimizeCall();
+    if (!DeoptCall || DeoptCall->getType() == RetTy)
+      continue;
+
+    if (!NewDeoptIntrinsic)
+      NewDeoptIntrinsic = Intrinsic::getOrInsertDeclaration(
+          NewFunc->getParent(), Intrinsic::experimental_deoptimize, {RetTy});
+
+    // The calling convention of the deoptimize call must match the (single)
+    // declaration of the intrinsic in a well-formed module.
+    CallingConv::ID CC = DeoptCall->getCalledFunction()->getCallingConv();
+    NewDeoptIntrinsic->setCallingConv(CC);
+
+    auto *RI = cast<ReturnInst>(BB.getTerminator());
+    SmallVector<Value *, 4> CallArgs(DeoptCall->args());
+    SmallVector<OperandBundleDef, 1> OpBundles;
+    DeoptCall->getOperandBundlesAsDefs(OpBundles);
+    AttributeList DeoptAttributes = DeoptCall->getAttributes();
+
+    RI->eraseFromParent();
+    DeoptCall->eraseFromParent();
+
+    IRBuilder<> Builder(&BB);
+    CallInst *NewDeoptCall =
+        Builder.CreateCall(NewDeoptIntrinsic, CallArgs, OpBundles);
+    NewDeoptCall->setCallingConv(CC);
+    NewDeoptCall->setAttributes(DeoptAttributes);
+    // The return type changed, so drop now-incompatible return attributes.
+    NewDeoptCall->removeRetAttrs(AttributeFuncs::typeIncompatible(
+        NewDeoptCall->getType(), NewDeoptCall->getRetAttributes()));
+    if (NewDeoptCall->getType()->isVoidTy())
+      Builder.CreateRetVoid();
+    else
+      Builder.CreateRet(NewDeoptCall);
   }
 }
 
