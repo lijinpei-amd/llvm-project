@@ -263,7 +263,9 @@ define void @infer_func_attrs2(ptr dereferenceable(8) %p) readonly {
 }
 
 ; CHECK-LABEL: 'infer_noalias1'
-; CHECK: %p
+; GLOBAL: %p
+; POINT-NOT: %p
+; FIXME: Can be inferred from attributes
 define void @infer_noalias1(ptr dereferenceable(8) noalias nofree %p) {
   call void @mayfree()
   %v = load i32, ptr %p
@@ -271,30 +273,15 @@ define void @infer_noalias1(ptr dereferenceable(8) noalias nofree %p) {
 }
 
 ; CHECK-LABEL: 'infer_noalias2'
-; CHECK: %p
-define void @infer_noalias2(ptr dereferenceable(8) noalias readonly %p) {
+; GLOBAL: %p
+; POINT-NOT: %p
+; FIXME: Can be inferred from attributes
+define void @infer_noalias2(ptr dereferenceable(8) noalias readonly %p) nosync {
   call void @mayfree()
   %v = load i32, ptr %p
   ret void
 }
 
-; CHECK-LABEL: 'infer_missing_noalias1'
-; GLOBAL: %p
-; POINT-NOT: %p
-define void @infer_missing_noalias1(ptr dereferenceable(8) nofree %p) {
-  call void @mayfree()
-  %v = load i32, ptr %p
-  ret void
-}
-
-; CHECK-LABEL: 'infer_missing_noalias2'
-; GLOBAL: %p
-; POINT-NOT: %p
-define void @infer_missing_noalias2(ptr dereferenceable(8) readonly %p) {
-  call void @mayfree()
-  %v = load i32, ptr %p
-  ret void
-}
 
 ; Just check that we don't crash.
 ; CHECK-LABEL: 'opaque_type_crasher'

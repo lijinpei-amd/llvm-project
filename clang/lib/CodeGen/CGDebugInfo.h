@@ -72,7 +72,7 @@ class CGDebugInfo {
   llvm::DIFile *CurLocFile = nullptr;
   unsigned CurLocLine = 0;
   unsigned CurLocColumn = 0;
-  llvm::DILocation *CurInlinedAt = nullptr;
+  llvm::MDNode *CurInlinedAt = nullptr;
   llvm::DIType *VTablePtrType = nullptr;
   llvm::DIType *ClassTy = nullptr;
   llvm::DICompositeType *ObjTy = nullptr;
@@ -477,10 +477,10 @@ public:
 
   /// Update the current inline scope. All subsequent calls to \p EmitLocation
   /// will create a location with this inlinedAt field.
-  void setInlinedAt(llvm::DILocation *InlinedAt) { CurInlinedAt = InlinedAt; }
+  void setInlinedAt(llvm::MDNode *InlinedAt) { CurInlinedAt = InlinedAt; }
 
   /// \return the current inline scope.
-  llvm::DILocation *getInlinedAt() const { return CurInlinedAt; }
+  llvm::MDNode *getInlinedAt() const { return CurInlinedAt; }
 
   // Converts a SourceLocation to a DebugLoc
   llvm::DebugLoc SourceLocToDebugLoc(SourceLocation Loc);

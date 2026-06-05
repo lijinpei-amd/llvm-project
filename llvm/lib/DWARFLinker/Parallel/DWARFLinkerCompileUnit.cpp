@@ -518,7 +518,8 @@ void CompileUnit::emitLocations(DebugSectionKind LocationSectionKind) {
               CurExpression.Range->HighPC + Patch.AddrAdjustmentValue};
         }
 
-        DataExtractor Data(CurExpression.Expr, OrigUnit.isLittleEndian());
+        DataExtractor Data(CurExpression.Expr, OrigUnit.isLittleEndian(),
+                           OrigUnit.getAddressByteSize());
 
         DWARFExpression InputExpression(Data, OrigUnit.getAddressByteSize(),
                                         OrigUnit.getFormParams().Format);

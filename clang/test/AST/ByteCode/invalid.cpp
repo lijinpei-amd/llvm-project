@@ -198,14 +198,3 @@ namespace InvalidUnaryOperator {
       ;
   }
 }
-
-namespace IncNonDereferencable {
-  struct S {};
-
-  void foo() {
-    S *s = (foo *)malloc(sizeof(*s)); // both-error {{expected expression}}
-    S *&sref = s;
-    for (int i = 0; i < 2; sref++)
-      ;
-  }
-}

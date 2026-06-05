@@ -706,10 +706,12 @@ void InstrEmitter::EmitRegSequence(SDNode *Node, VRBaseMapType &VRBaseMap,
 
 /// EmitDbgValue - Generate machine instruction for a dbg_value node.
 ///
-MachineInstr *InstrEmitter::EmitDbgValue(SDDbgValue *SD,
-                                         VRBaseMapType &VRBaseMap) {
+MachineInstr *
+InstrEmitter::EmitDbgValue(SDDbgValue *SD,
+                           VRBaseMapType &VRBaseMap) {
+  DebugLoc DL = SD->getDebugLoc();
   assert(cast<DILocalVariable>(SD->getVariable())
-             ->isValidLocationForIntrinsic(SD->getDebugLoc()) &&
+             ->isValidLocationForIntrinsic(DL) &&
          "Expected inlined-at fields to agree");
 
   SD->setIsEmitted();

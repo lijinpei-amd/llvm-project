@@ -4325,11 +4325,16 @@ Use-list directives may appear at function scope or global scope. They are not
 instructions, and have no effect on the semantics of the IR. When they're at
 function scope, they must appear after the terminator of the final basic block.
 
+If basic blocks have their address taken via ``blockaddress()`` expressions,
+``uselistorder_bb`` can be used to reorder their use-lists from outside their
+function's scope.
+
 :Syntax:
 
 ::
 
     uselistorder <ty> <value>, { <order-indexes> }
+    uselistorder_bb @function, %block { <order-indexes> }
 
 :Examples:
 
@@ -4350,6 +4355,7 @@ function scope, they must appear after the terminator of the final basic block.
     uselistorder ptr @global, { 1, 2, 0 }
     uselistorder i32 7, { 1, 0 }
     uselistorder i32 (i32) @bar, { 1, 0 }
+    uselistorder_bb @foo, %bb, { 5, 1, 3, 2, 0, 4 }
 
 .. _source_filename:
 

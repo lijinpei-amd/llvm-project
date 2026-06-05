@@ -2756,6 +2756,10 @@ TGParser::resolveInitTypes(ArrayRef<const Init *> Inits, const Twine &ErrCtx) {
     const RecTy *VTy = nullptr;
     if (const auto *Vt = dyn_cast<TypedInit>(V))
       VTy = Vt->getType();
+    if (const auto *Vbits = dyn_cast<BitsInit>(V))
+      VTy = BitsRecTy::get(Records, Vbits->getNumBits());
+    if (isa<BitInit>(V))
+      VTy = BitRecTy::get(Records);
 
     if (!Type) {
       Type = VTy;
@@ -2785,8 +2789,8 @@ const Init *TGParser::ParseOperationCond(Record *CurRec,
   }
 
   // Parse through '[Case: Val,]+'
-  SmallVector<const Init *, 4> Cases;
-  SmallVector<const Init *, 4> Vals;
+  SmallVector<const Init *, 4> Case;
+  SmallVector<const Init *, 4> Val;
   while (true) {
     if (consume(tgtok::r_paren))
       break;
@@ -2794,7 +2798,7 @@ const Init *TGParser::ParseOperationCond(Record *CurRec,
     const Init *V = ParseValue(CurRec);
     if (!V)
       return nullptr;
-    Cases.push_back(V);
+    Case.push_back(V);
 
     if (!consume(tgtok::colon)) {
       TokError("expected ':'  following a condition in !cond operator");
@@ -2804,7 +2808,7 @@ const Init *TGParser::ParseOperationCond(Record *CurRec,
     V = ParseValue(CurRec, ItemType);
     if (!V)
       return nullptr;
-    Vals.push_back(V);
+    Val.push_back(V);
 
     if (consume(tgtok::r_paren))
       break;
@@ -2815,14 +2819,14 @@ const Init *TGParser::ParseOperationCond(Record *CurRec,
     }
   }
 
-  if (Cases.size() < 1) {
+  if (Case.size() < 1) {
     TokError(
         "there should be at least 1 'condition : value' in the !cond operator");
     return nullptr;
   }
 
   // resolve type
-  std::optional<const RecTy *> TypeOpt = resolveInitTypes(Vals, "for !cond");
+  std::optional<const RecTy *> TypeOpt = resolveInitTypes(Val, "for !cond");
   if (!TypeOpt)
     return nullptr;
   const RecTy *Type = *TypeOpt;
@@ -2830,7 +2834,7 @@ const Init *TGParser::ParseOperationCond(Record *CurRec,
     TokError("could not determine type for !cond from its arguments");
     return nullptr;
   }
-  return CondOpInit::get(Cases, Vals, Type)->Fold(CurRec);
+  return CondOpInit::get(Case, Val, Type)->Fold(CurRec);
 }
 
 /// Switch ::= !switch(key, [case : val,]+ default-val) => val type

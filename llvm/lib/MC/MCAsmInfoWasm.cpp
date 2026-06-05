@@ -24,6 +24,7 @@ MCAsmInfoWasm::MCAsmInfoWasm(const MCTargetOptions &Options)
   HasNoDeadStrip = true;
   WeakRefDirective = "\t.weak\t";
   InternalSymbolPrefix = ".L";
+  PrivateLabelPrefix = ".L";
 }
 
 static void printName(raw_ostream &OS, StringRef Name) {

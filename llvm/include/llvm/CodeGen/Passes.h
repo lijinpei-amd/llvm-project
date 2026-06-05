@@ -556,7 +556,7 @@ LLVM_ABI FunctionPass *createReplaceWithVeclibLegacyPass();
 LLVM_ABI FunctionPass *createExpandIRInstsPass(CodeGenOptLevel);
 
 /// Creates Break False Dependencies pass. \see BreakFalseDeps.cpp
-LLVM_ABI FunctionPass *createBreakFalseDepsLegacyPass();
+LLVM_ABI FunctionPass *createBreakFalseDeps();
 
 // This pass expands indirectbr instructions.
 LLVM_ABI FunctionPass *createIndirectBrExpandPass();

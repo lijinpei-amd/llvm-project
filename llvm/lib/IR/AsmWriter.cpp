@@ -5038,11 +5038,20 @@ void AssemblyWriter::writeAllAttributeGroups() {
 
 void AssemblyWriter::printUseListOrder(const Value *V,
                                        ArrayRef<unsigned> Shuffle) {
-  if (Machine.getFunction())
+  bool IsInFunction = Machine.getFunction();
+  if (IsInFunction)
     Out << "  ";
 
-  Out << "uselistorder ";
-  writeOperand(V, true);
+  Out << "uselistorder";
+  if (const BasicBlock *BB = IsInFunction ? nullptr : dyn_cast<BasicBlock>(V)) {
+    Out << "_bb ";
+    writeOperand(BB->getParent(), false);
+    Out << ", ";
+    writeOperand(BB, false);
+  } else {
+    Out << " ";
+    writeOperand(V, true);
+  }
 
   assert(Shuffle.size() >= 2 && "Shuffle too small");
   Out << ", { " << llvm::interleaved(Shuffle) << " }\n";

@@ -376,12 +376,12 @@ MCSymbol *MCContext::createNamedTempSymbol(const Twine &Name) {
 
 MCSymbol *MCContext::createBlockSymbol(const Twine &Name, bool AlwaysEmit) {
   if (AlwaysEmit)
-    return getOrCreateSymbol(MAI.getInternalSymbolPrefix() + Name);
+    return getOrCreateSymbol(MAI.getPrivateLabelPrefix() + Name);
 
   bool IsTemporary = !SaveTempLabels;
   if (IsTemporary && !UseNamesOnTempLabels)
     return createSymbolImpl(nullptr, IsTemporary);
-  return createRenamableSymbol(MAI.getInternalSymbolPrefix() + Name,
+  return createRenamableSymbol(MAI.getPrivateLabelPrefix() + Name,
                                /*AlwaysAddSuffix=*/false, IsTemporary);
 }
 

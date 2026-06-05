@@ -3570,8 +3570,6 @@ bool Compiler<Emitter>::VisitCXXDynamicCastExpr(const CXXDynamicCastExpr *E) {
   if (!this->emitCheckDynamicCast(E))
     return false;
 
-  if (DiscardResult)
-    return this->emitPopPtr(E);
   return true;
 }
 
@@ -3831,7 +3829,7 @@ bool Compiler<Emitter>::VisitCXXScalarValueInitExpr(
   if (OptPrimType T = classify(Ty))
     return this->visitZeroInitializer(*T, Ty, E);
 
-  if (Ty->isAnyComplexType() || Ty->isVectorType()) {
+  if (const auto *CT = Ty->getAs<ComplexType>()) {
     if (!Initializing) {
       UnsignedOrNone LocalIndex = allocateLocal(E);
       if (!LocalIndex)
@@ -3840,21 +3838,34 @@ bool Compiler<Emitter>::VisitCXXScalarValueInitExpr(
         return false;
     }
 
-    QualType ElemQT;
-    unsigned NumElems;
-    if (const auto *CT = Ty->getAs<ComplexType>()) {
-      NumElems = 2;
-      ElemQT = CT->getElementType();
-    } else {
-      const auto *VT = Ty->castAs<VectorType>();
-      NumElems = VT->getNumElements();
-      ElemQT = VT->getElementType();
-    }
-
+    // Initialize both fields to 0.
+    QualType ElemQT = CT->getElementType();
     PrimType ElemT = classifyPrim(ElemQT);
 
+    for (unsigned I = 0; I != 2; ++I) {
+      if (!this->visitZeroInitializer(ElemT, ElemQT, E))
+        return false;
+      if (!this->emitInitElem(ElemT, I, E))
+        return false;
+    }
+    return true;
+  }
+
+  if (const auto *VT = Ty->getAs<VectorType>()) {
+    // FIXME: Code duplication with the _Complex case above.
+    if (!Initializing) {
+      UnsignedOrNone LocalIndex = allocateLocal(E);
+      if (!LocalIndex)
+        return false;
+      if (!this->emitGetPtrLocal(*LocalIndex, E))
+        return false;
+    }
+
     // Initialize all fields to 0.
-    for (unsigned I = 0, N = NumElems; I != N; ++I) {
+    QualType ElemQT = VT->getElementType();
+    PrimType ElemT = classifyPrim(ElemQT);
+
+    for (unsigned I = 0, N = VT->getNumElements(); I != N; ++I) {
       if (!this->visitZeroInitializer(ElemT, ElemQT, E))
         return false;
       if (!this->emitInitElem(ElemT, I, E))

@@ -231,9 +231,6 @@ private:
                    const ClauseTy *);
   bool applyClause(const tomp::clause::DefaultT<TypeTy, IdTy, ExprTy> &clause,
                    const ClauseTy *);
-  bool applyClause(
-      const tomp::clause::DynGroupprivateT<TypeTy, IdTy, ExprTy> &clause,
-      const ClauseTy *);
   bool
   applyClause(const tomp::clause::FirstprivateT<TypeTy, IdTy, ExprTy> &clause,
               const ClauseTy *);
@@ -539,21 +536,6 @@ bool ConstructDecompositionT<C, H>::applyClause(
   // [5.2:340:31]
   if (!applyToAll(input))
     return error(input, ErrorCode::NoLeafAllowing);
-  return true;
-}
-
-// DYN_GROUPPRIVATE
-// [6.1] dyn_groupprivate clause
-// Directives: target, teams
-//
-// The effect of the dyn_groupprivate clause is as if it is applied to the
-// outermost leaf construct that permits it.
-template <typename C, typename H>
-bool ConstructDecompositionT<C, H>::applyClause(
-    const tomp::clause::DynGroupprivateT<TypeTy, IdTy, ExprTy> &clause,
-    const ClauseTy *node) {
-  if (!applyToOutermost(node))
-    return error(node, ErrorCode::NoLeafAllowing);
   return true;
 }
 

@@ -181,15 +181,12 @@ void GCNSubtarget::checkSubtargetFeatures(const Function &F) const {
 }
 
 GCNSubtarget::GCNSubtarget(const Triple &TT, StringRef GPU, StringRef FS,
-                           const GCNTargetMachine &TM, bool BufferOOBRelaxed,
-                           bool TBufferOOBRelaxed)
+                           const GCNTargetMachine &TM)
     : // clang-format off
     AMDGPUGenSubtargetInfo(TT, GPU, /*TuneCPU*/ GPU, FS),
     AMDGPUSubtarget(TT),
     TargetID(*this),
     InstrItins(getInstrItineraryForCPU(GPU)),
-    BufferOOBRelaxed(BufferOOBRelaxed),
-    TBufferOOBRelaxed(TBufferOOBRelaxed),
     InstrInfo(initializeSubtargetDependencies(TT, GPU, FS)),
     TLInfo(TM, *this),
     // Frame index expansion sometimes assumes the low bit of SP is 0

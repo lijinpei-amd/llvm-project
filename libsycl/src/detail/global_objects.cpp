@@ -8,7 +8,6 @@
 
 #include <detail/global_objects.hpp>
 #include <detail/platform_impl.hpp>
-#include <detail/program_manager.hpp>
 
 #ifdef _WIN32
 #  include <windows.h>
@@ -32,7 +31,6 @@ struct StaticVarShutdownHandler {
   StaticVarShutdownHandler &
   operator=(const StaticVarShutdownHandler &) = delete;
   ~StaticVarShutdownHandler() {
-    ProgramAndKernelManager::getInstance().releaseResources();
     // No error reporting in shutdown
     std::ignore = olShutDown();
   }

@@ -1796,7 +1796,7 @@ public:
 
 class DeclAsInlineDebugLocation {
   CGDebugInfo *DI;
-  llvm::DILocation *InlinedAt;
+  llvm::MDNode *InlinedAt;
   std::optional<ApplyDebugLocation> Location;
 
 public:

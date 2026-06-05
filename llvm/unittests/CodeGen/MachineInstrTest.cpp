@@ -512,12 +512,8 @@ MATCHER_P(HasMIMetadata, MIMD, "") {
 TEST(MachineInstrBuilder, BuildMI) {
   LLVMContext Ctx;
   MDNode *PCS = MDNode::getDistinct(Ctx, {});
-  DIFile *DIF = DIFile::getDistinct(Ctx, "filename", "");
-  DISubprogram *DIS = DISubprogram::getDistinct(
-      Ctx, nullptr, "", "", DIF, 0, nullptr, 0, nullptr, 0, 0, DINode::FlagZero,
-      DISubprogram::SPFlagZero, nullptr);
-  DILocation *DIL = DILocation::get(Ctx, 1, 5, DIS);
-  DebugLoc DL(DIL);
+  MDNode *DI = MDNode::getDistinct(Ctx, {});
+  DebugLoc DL(DI);
   MIMetadata MIMD(DL, PCS);
   EXPECT_EQ(MIMD.getDL(), DL);
   EXPECT_EQ(MIMD.getPCSections(), PCS);

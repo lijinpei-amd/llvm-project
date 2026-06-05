@@ -8,7 +8,10 @@ entry:
 ; CHECK-NEXT: ![[IA]] = !{}
 
 exit:
-  ret void
+  ret void, !dbg !{}
+; CHECK: invalid !dbg metadata attachment
+; CHECK-NEXT: ret void, !dbg ![[LOC:[0-9]+]]
+; CHECK-NEXT: ![[LOC]] = !{}
 }
 
 ; CHECK: warning: ignoring invalid debug info

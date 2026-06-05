@@ -292,6 +292,7 @@ patterns:
             \\bunnamed_addr\\b|\
             \\bunordered\\b|\
             \\buselistorder\\b|\
+            \\buselistorder_bb\\b|\
             \\buwtable\\b|\
             \\bvolatile\\b|\
             \\bweak\\b|\

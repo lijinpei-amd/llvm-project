@@ -46,6 +46,7 @@ MCAsmInfoELF::MCAsmInfoELF(const MCTargetOptions &Options)
   HasPreferredAlignment = true;
   WeakRefDirective = "\t.weak\t";
   InternalSymbolPrefix = ".L";
+  PrivateLabelPrefix = ".L";
 }
 
 static void printName(raw_ostream &OS, StringRef Name) {

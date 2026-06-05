@@ -42,6 +42,29 @@ extern cl::opt<unsigned> Verbosity;
 namespace llvm {
 namespace bolt {
 
+/// Returns DWO Name to be used to update DW_AT_dwo_name/DW_AT_GNU_dwo_name
+/// either in CU or TU unit die. Handles case where user specifies output DWO
+/// directory, and there are duplicate names. Assumes DWO ID is unique.
+static std::string
+getDWOName(llvm::DWARFUnit &CU,
+           std::unordered_map<std::string, uint32_t> &NameToIndexMap,
+           std::optional<StringRef> &DwarfOutputPath) {
+  assert(CU.getDWOId() && "DWO ID not found.");
+  std::string DWOName = dwarf::toString(
+      CU.getUnitDIE().find({dwarf::DW_AT_dwo_name, dwarf::DW_AT_GNU_dwo_name}),
+      "");
+  assert(!DWOName.empty() &&
+         "DW_AT_dwo_name/DW_AT_GNU_dwo_name does not exist.");
+  if (DwarfOutputPath) {
+    DWOName = std::string(sys::path::filename(DWOName));
+    uint32_t &Index = NameToIndexMap[DWOName];
+    DWOName.append(std::to_string(Index));
+    ++Index;
+  }
+  DWOName.append(".dwo");
+  return DWOName;
+}
+
 /// Adds a \p Str to .debug_str section.
 /// Uses \p AttrInfoVal to either update entry in a DIE for legacy DWARF using
 /// \p DebugInfoPatcher, or for DWARF5 update an index in .debug_str_offsets
@@ -62,31 +85,38 @@ static void addStringHelper(DebugStrOffsetsWriter &StrOffstsWriter,
 
 std::string DIEBuilder::updateDWONameCompDir(
     DebugStrOffsetsWriter &StrOffstsWriter, DebugStrWriter &StrWriter,
-    DWARFUnit &SkeletonCU, StringRef DwarfOutputPath,
-    const StringRef DWONameToUse) {
+    DWARFUnit &SkeletonCU, std::optional<StringRef> DwarfOutputPath,
+    std::optional<StringRef> DWONameToUse) {
   DIE &UnitDIE = *getUnitDIEbyUnit(SkeletonCU);
   DIEValue DWONameAttrInfo = UnitDIE.findAttribute(dwarf::DW_AT_dwo_name);
   if (!DWONameAttrInfo)
     DWONameAttrInfo = UnitDIE.findAttribute(dwarf::DW_AT_GNU_dwo_name);
   if (!DWONameAttrInfo)
     return "";
-  std::string ObjectName(DWONameToUse);
+  std::string ObjectName;
+  if (DWONameToUse)
+    ObjectName = *DWONameToUse;
+  else
+    ObjectName = getDWOName(SkeletonCU, NameToIndexMap, DwarfOutputPath);
   addStringHelper(StrOffstsWriter, StrWriter, *this, UnitDIE, SkeletonCU,
                   DWONameAttrInfo, ObjectName);
 
   DIEValue CompDirAttrInfo = UnitDIE.findAttribute(dwarf::DW_AT_comp_dir);
   assert(CompDirAttrInfo && "DW_AT_comp_dir is not in Skeleton CU.");
 
-  if (!DwarfOutputPath.empty()) {
+  if (DwarfOutputPath) {
+    if (!sys::fs::exists(*DwarfOutputPath))
+      sys::fs::create_directory(*DwarfOutputPath);
     addStringHelper(StrOffstsWriter, StrWriter, *this, UnitDIE, SkeletonCU,
-                    CompDirAttrInfo, DwarfOutputPath);
+                    CompDirAttrInfo, *DwarfOutputPath);
   }
   return ObjectName;
 }
 
 void DIEBuilder::updateDWONameCompDirForTypes(
     DebugStrOffsetsWriter &StrOffstsWriter, DebugStrWriter &StrWriter,
-    DWARFUnit &Unit, StringRef DwarfOutputPath, const StringRef DWOName) {
+    DWARFUnit &Unit, std::optional<StringRef> DwarfOutputPath,
+    const StringRef DWOName) {
   for (DWARFUnit *DU : getState().DWARF5TUVector)
     updateDWONameCompDir(StrOffstsWriter, StrWriter, *DU, DwarfOutputPath,
                          DWOName);

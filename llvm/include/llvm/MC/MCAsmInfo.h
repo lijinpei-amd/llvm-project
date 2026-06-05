@@ -158,8 +158,11 @@ protected:
 
   /// For internal use by compiler and assembler, not meant to be visible
   /// externally. They are usually not emitted to the symbol table in the
-  /// object file. This is also used for labels for basic blocks.
+  /// object file.
   StringRef InternalSymbolPrefix = "L";
+
+  /// This prefix is used for labels for basic blocks. Defaults to "L"
+  StringRef PrivateLabelPrefix = "L";
 
   /// This prefix is used for symbols that should be passed through the
   /// assembler but be removed by the linker.  This is 'l' on Darwin, currently
@@ -560,6 +563,7 @@ public:
   bool useAssignmentForEHBegin() const { return UseAssignmentForEHBegin; }
   bool needsLocalForSize() const { return NeedsLocalForSize; }
   StringRef getInternalSymbolPrefix() const { return InternalSymbolPrefix; }
+  StringRef getPrivateLabelPrefix() const { return PrivateLabelPrefix; }
 
   bool hasLinkerPrivateGlobalPrefix() const {
     return !LinkerPrivateGlobalPrefix.empty();

@@ -16,7 +16,6 @@
 #include "X86TargetMachine.h"
 
 #include "llvm/CodeGen/AtomicExpand.h"
-#include "llvm/CodeGen/BreakFalseDeps.h"
 #include "llvm/CodeGen/EarlyIfConversion.h"
 #include "llvm/CodeGen/IndirectBrExpand.h"
 #include "llvm/CodeGen/InterleavedAccess.h"

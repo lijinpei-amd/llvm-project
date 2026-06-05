@@ -139,11 +139,11 @@ public:
   size_t DoReadMemory(lldb::addr_t addr, void *buf, size_t size,
                       Status &error) override;
 
-  /// Override of DoReadMemoryRanges that uses MultiMemRead to perform this
-  /// operation in a single packet.
+  /// Override of ReadMemoryRanges that uses MultiMemRead to optimize this
+  /// operation.
   llvm::SmallVector<llvm::MutableArrayRef<uint8_t>>
-  DoReadMemoryRanges(llvm::ArrayRef<Range<lldb::addr_t, size_t>> ranges,
-                     llvm::MutableArrayRef<uint8_t> buf) override;
+  ReadMemoryRanges(llvm::ArrayRef<Range<lldb::addr_t, size_t>> ranges,
+                   llvm::MutableArrayRef<uint8_t> buf) override;
 
 private:
   llvm::Expected<StringExtractorGDBRemote>

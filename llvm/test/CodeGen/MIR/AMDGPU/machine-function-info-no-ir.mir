@@ -58,7 +58,6 @@
 # FULL-NEXT: scratchReservedForDynamicVGPRs: 0
 # FULL-NEXT: numKernargPreloadSGPRs: 0
 # FULL-NEXT: isWholeWaveFunction: false
-# FULL-NEXT: minNumAGPRs: 4294967295
 # FULL-NEXT: body:
 
 # SIMPLE: machineFunctionInfo:
@@ -168,7 +167,6 @@ body:             |
 # FULL-NEXT: scratchReservedForDynamicVGPRs: 0
 # FULL-NEXT: numKernargPreloadSGPRs: 0
 # FULL-NEXT: isWholeWaveFunction: false
-# FULL-NEXT: minNumAGPRs: 4294967295
 # FULL-NEXT: body:
 
 # SIMPLE: machineFunctionInfo:
@@ -250,7 +248,6 @@ body:             |
 # FULL-NEXT: scratchReservedForDynamicVGPRs: 0
 # FULL-NEXT: numKernargPreloadSGPRs: 0
 # FULL-NEXT: isWholeWaveFunction: false
-# FULL-NEXT: minNumAGPRs: 4294967295
 # FULL-NEXT: body:
 
 # SIMPLE: machineFunctionInfo:
@@ -333,7 +330,6 @@ body:             |
 # FULL-NEXT: scratchReservedForDynamicVGPRs: 0
 # FULL-NEXT: numKernargPreloadSGPRs: 0
 # FULL-NEXT: isWholeWaveFunction: false
-# FULL-NEXT: minNumAGPRs: 4294967295
 # FULL-NEXT: body:
 
 # SIMPLE: machineFunctionInfo:
@@ -627,20 +623,6 @@ body: |
 name: max_memory_cluster_dwords
 machineFunctionInfo:
   maxMemoryClusterDWords: 16
-body:             |
-  bb.0:
-    SI_RETURN
-
-...
-
----
-# A non-default minNumAGPRs parsed from the YAML must round-trip.
-# ALL-LABEL: name: min_num_agprs
-# FULL: minNumAGPRs:     8
-# SIMPLE: minNumAGPRs:     8
-name: min_num_agprs
-machineFunctionInfo:
-  minNumAGPRs:     8
 body:             |
   bb.0:
     SI_RETURN

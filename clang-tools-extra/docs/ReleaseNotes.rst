@@ -461,12 +461,7 @@ Changes in existing checks
   Objective-C for-in loop variable declaration.
 
 - Improved :doc:`cppcoreguidelines-missing-std-forward
-  <clang-tidy/checks/cppcoreguidelines/missing-std-forward>` check by:
-
-  - Correctly handling forwarding in deeply nested lambdas.
-
-  - Fixed false negative when multiple parameters are used in a lambda and
-    only some of them are forwarded.
+  <clang-tidy/checks/cppcoreguidelines/missing-std-forward>` check:
 
   - Fixed false positive for constrained template parameters
 

@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "GlobalISelMatchTableExecutorEmitter.h"
-#include "MatchTable/Matchers.h"
+#include "GlobalISelMatchTable.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/TableGen/CodeGenHelpers.h"
 

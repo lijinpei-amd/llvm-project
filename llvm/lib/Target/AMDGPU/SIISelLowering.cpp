@@ -2257,11 +2257,10 @@ bool SITargetLowering::allowsMisalignedMemoryAccessesImpl(
            Subtarget->hasUnalignedBufferAccessEnabled();
   }
 
-  // Ensure robust out-of-bounds guarantees for buffer accesses are met when the
-  // "amdgpu.buffer.oob.mode" module flag has not enabled relaxed untyped-buffer
-  // OOB semantics. Normally hardware will ensure proper
+  // Ensure robust out-of-bounds guarantees for buffer accesses are met if
+  // RelaxedBufferOOBMode is disabled. Normally hardware will ensure proper
   // out-of-bounds behavior, but in the edge case where an access starts
-  // out-of-bounds and then enters in-bounds, the entire access would be treated
+  // out-of-bounds and then enter in-bounds, the entire access would be treated
   // as out-of-bounds. Prevent misaligned memory accesses by requiring the
   // natural alignment of buffer accesses.
   if (AddrSpace == AMDGPUAS::BUFFER_FAT_POINTER ||
@@ -17697,7 +17696,8 @@ SDValue SITargetLowering::performFDivCombine(SDNode *N,
   SDLoc SL(N);
   EVT VT = N->getValueType(0);
 
-  if (VT != MVT::f16 && VT != MVT::bf16)
+  // fsqrt legality correlates to rsq availability.
+  if ((VT != MVT::f16 && VT != MVT::bf16) || !isOperationLegal(ISD::FSQRT, VT))
     return SDValue();
 
   SDValue LHS = N->getOperand(0);
@@ -17713,32 +17713,12 @@ SDValue SITargetLowering::performFDivCombine(SDNode *N,
     bool IsNegative = false;
     if (CLHS->isExactlyValue(1.0) ||
         (IsNegative = CLHS->isExactlyValue(-1.0))) {
-      // fdiv contract 1.0, (sqrt contract x) -> rsq
-      // fdiv contract -1.0, (sqrt contract x) -> fneg(rsq)
+      // fdiv contract 1.0, (sqrt contract x) -> rsq for f16
+      // fdiv contract -1.0, (sqrt contract x) -> fneg(rsq) for f16
       if (RHS.getOpcode() == ISD::FSQRT) {
         // TODO: Or in RHS flags, somehow missing from SDNodeFlags
-        SDValue SqrtOp = RHS.getOperand(0);
-        SDValue Rsq;
-        if (isOperationLegal(ISD::FSQRT, VT)) {
-          // fsqrt legality correlates to rsq availability of the same type.
-          Rsq = DAG.getNode(AMDGPUISD::RSQ, SL, VT, SqrtOp, Flags);
-        } else if (VT == MVT::f16) {
-          // Targets without 16-bit instructions (gfx6/gfx7) have no f16 rsq,
-          // but v_rsq_f32 is more than accurate enough for f16. Unlike bf16,
-          // every f16 value (including denormals) extends to a normal f32, and
-          // an f16 rsq result is never denormal, so the f32 reciprocal square
-          // root needs no denormal handling. Compute it in f32 and round back.
-          SDValue Ext =
-              DAG.getNode(ISD::FP_EXTEND, SL, MVT::f32, SqrtOp, Flags);
-          SDValue F32Rsq =
-              DAG.getNode(AMDGPUISD::RSQ, SL, MVT::f32, Ext, Flags);
-          Rsq = DAG.getNode(ISD::FP_ROUND, SL, VT, F32Rsq,
-                            DAG.getTargetConstant(0, SL, MVT::i32), Flags);
-        } else {
-          // bf16 shares f32's exponent range, so bf16 denormals would extend to
-          // f32 denormals that v_rsq_f32 does not handle. Leave it expanded.
-          return SDValue();
-        }
+        SDValue Rsq =
+            DAG.getNode(AMDGPUISD::RSQ, SL, VT, RHS.getOperand(0), Flags);
         return IsNegative ? DAG.getNode(ISD::FNEG, SL, VT, Rsq, Flags) : Rsq;
       }
     }
@@ -20575,6 +20555,51 @@ bool SITargetLowering::isReassocProfitable(SelectionDAG &DAG, SDValue N0,
 bool SITargetLowering::isReassocProfitable(MachineRegisterInfo &MRI,
                                            Register N0, Register N1) const {
   return MRI.hasOneNonDBGUse(N0); // FIXME: handle regbanks
+}
+
+SDValue SITargetLowering::getNegatedExpression(SDValue Op, SelectionDAG &DAG,
+                                               bool LegalOperations,
+                                               bool ForCodeSize,
+                                               NegatibleCost &Cost,
+                                               unsigned Depth) const {
+  switch (Op.getOpcode()) {
+  case ISD::FDIV: {
+    EVT VT = Op.getValueType();
+    if ((VT == MVT::f32 || VT == MVT::f16 || VT == MVT::bf16)) {
+      SDValue LHS = Op.getOperand(0);
+      const SDNodeFlags Flags = Op->getFlags();
+
+      bool AllowInaccurateRcp = Flags.hasApproximateFuncs();
+      if (const ConstantFPSDNode *CLHS = dyn_cast<ConstantFPSDNode>(LHS)) {
+        if (!AllowInaccurateRcp && VT != MVT::f16 && VT != MVT::bf16)
+          break;
+
+        SDLoc SL(Op);
+        SDValue RHS = Op.getOperand(1);
+        if (CLHS->isExactlyValue(1.0)) {
+          SDValue NegRHS = getNegatedExpression(RHS, DAG, LegalOperations,
+                                                ForCodeSize, Cost, Depth + 1);
+          if (!NegRHS)
+            return SDValue();
+          SDLoc SL(Op);
+          return DAG.getNode(ISD::FDIV, SL, VT, LHS, NegRHS, Op->getFlags());
+        }
+
+        if (CLHS->isExactlyValue(-1.0)) {
+          Cost = NegatibleCost::Cheaper;
+          return DAG.getNode(ISD::FDIV, SL, VT, DAG.getConstantFP(1.0, SL, VT),
+                             RHS, Op->getFlags());
+        }
+      }
+    }
+    break;
+  }
+  default:
+    break;
+  }
+
+  return AMDGPUTargetLowering::getNegatedExpression(Op, DAG, LegalOperations,
+                                                    ForCodeSize, Cost, Depth);
 }
 
 MachineMemOperand::Flags

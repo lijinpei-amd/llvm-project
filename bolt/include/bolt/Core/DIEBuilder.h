@@ -132,6 +132,9 @@ private:
   uint64_t DebugNamesUnitSize{0};
   llvm::DenseSet<uint64_t> AllProcessed;
   DWARF5AcceleratorTable &DebugNamesTable;
+  // Unordered map to handle name collision if output DWO directory is
+  // specified.
+  std::unordered_map<std::string, uint32_t> NameToIndexMap;
 
   /// Returns current state of the DIEBuilder
   State &getState() { return *BuilderState; }
@@ -389,12 +392,12 @@ public:
   std::string updateDWONameCompDir(DebugStrOffsetsWriter &StrOffstsWriter,
                                    DebugStrWriter &StrWriter,
                                    DWARFUnit &SkeletonCU,
-                                   StringRef DwarfOutputPath,
-                                   const StringRef DWOName);
+                                   std::optional<StringRef> DwarfOutputPath,
+                                   std::optional<StringRef> DWONameToUse);
   /// Updates DWO Name and Compilation directory for Type Units.
   void updateDWONameCompDirForTypes(DebugStrOffsetsWriter &StrOffstsWriter,
                                     DebugStrWriter &StrWriter, DWARFUnit &Unit,
-                                    StringRef DwarfOutputPath,
+                                    std::optional<StringRef> DwarfOutputPath,
                                     const StringRef DWOName);
 };
 } // namespace bolt

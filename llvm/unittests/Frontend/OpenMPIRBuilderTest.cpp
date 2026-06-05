@@ -2878,6 +2878,8 @@ TEST_F(OpenMPIRBuilderTest, MasterDirective) {
   F->setName("func");
   IRBuilder<> Builder(BB);
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
+
   AllocaInst *PrivAI = nullptr;
 
   BasicBlock *EntryBB = nullptr;
@@ -2957,6 +2959,8 @@ TEST_F(OpenMPIRBuilderTest, MaskedDirective) {
   OMPBuilder.initialize();
   F->setName("func");
   IRBuilder<> Builder(BB);
+
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
 
   AllocaInst *PrivAI = nullptr;
 
@@ -3038,6 +3042,8 @@ TEST_F(OpenMPIRBuilderTest, CriticalDirective) {
   OMPBuilder.initialize();
   F->setName("func");
   IRBuilder<> Builder(BB);
+
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
 
   Type *PrivType = F->arg_begin()->getType();
   AllocaInst *PrivAI = Builder.CreateAlloca(PrivType);
@@ -3122,6 +3128,8 @@ TEST_F(OpenMPIRBuilderTest, OrderedDirectiveDependSource) {
   IRBuilder<> Builder(BB);
   LLVMContext &Ctx = M->getContext();
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
+
   InsertPointTy AllocaIP(&F->getEntryBlock(),
                          F->getEntryBlock().getFirstInsertionPt());
 
@@ -3205,6 +3213,8 @@ TEST_F(OpenMPIRBuilderTest, OrderedDirectiveDependSink) {
   IRBuilder<> Builder(BB);
   LLVMContext &Ctx = M->getContext();
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
+
   InsertPointTy AllocaIP(&F->getEntryBlock(),
                          F->getEntryBlock().getFirstInsertionPt());
 
@@ -3287,6 +3297,8 @@ TEST_F(OpenMPIRBuilderTest, OrderedDirectiveThreads) {
   F->setName("func");
   IRBuilder<> Builder(BB);
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
+
   Type *PrivType = F->arg_begin()->getType();
   AllocaInst *PrivAI = Builder.CreateAlloca(PrivType, nullptr, "priv.inst");
 
@@ -3362,6 +3374,8 @@ TEST_F(OpenMPIRBuilderTest, OrderedDirectiveSimd) {
   F->setName("func");
   IRBuilder<> Builder(BB);
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
+
   Type *PrivType = F->arg_begin()->getType();
   AllocaInst *PrivAI = Builder.CreateAlloca(PrivType, nullptr, "priv.inst");
 
@@ -3427,6 +3441,8 @@ TEST_F(OpenMPIRBuilderTest, CopyinBlocks) {
   F->setName("func");
   IRBuilder<> Builder(BB);
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
+
   IntegerType *Int32 = Type::getInt32Ty(M->getContext());
   AllocaInst *MasterAddress = Builder.CreateAlloca(Builder.getPtrTy());
   AllocaInst *PrivAddress = Builder.CreateAlloca(Builder.getPtrTy());
@@ -3460,6 +3476,8 @@ TEST_F(OpenMPIRBuilderTest, SingleDirective) {
   OMPBuilder.initialize();
   F->setName("func");
   IRBuilder<> Builder(BB);
+
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
 
   AllocaInst *PrivAI = nullptr;
 
@@ -3552,6 +3570,8 @@ TEST_F(OpenMPIRBuilderTest, SingleDirectiveNowait) {
   OMPBuilder.initialize();
   F->setName("func");
   IRBuilder<> Builder(BB);
+
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
 
   AllocaInst *PrivAI = nullptr;
 
@@ -3664,6 +3684,8 @@ TEST_F(OpenMPIRBuilderTest, SingleDirectiveCopyPrivate) {
   OMPBuilder.initialize();
   F->setName("func");
   IRBuilder<> Builder(BB);
+
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
 
   AllocaInst *PrivAI = nullptr;
 
@@ -3967,6 +3989,8 @@ TEST_F(OpenMPIRBuilderTest, OMPAtomicUpdate) {
   F->setName("func");
   IRBuilder<> Builder(BB);
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
+
   IntegerType *Int32 = Type::getInt32Ty(M->getContext());
   AllocaInst *XVal = Builder.CreateAlloca(Int32);
   XVal->setName("AtomicVar");
@@ -4034,6 +4058,8 @@ TEST_F(OpenMPIRBuilderTest, OMPAtomicUpdateFloat) {
   F->setName("func");
   IRBuilder<> Builder(BB);
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
+
   Type *FloatTy = Type::getFloatTy(M->getContext());
   AllocaInst *XVal = Builder.CreateAlloca(FloatTy);
   XVal->setName("AtomicVar");
@@ -4099,6 +4125,8 @@ TEST_F(OpenMPIRBuilderTest, OMPAtomicUpdateIntr) {
   OMPBuilder.initialize();
   F->setName("func");
   IRBuilder<> Builder(BB);
+
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
 
   Type *IntTy = Type::getInt32Ty(M->getContext());
   AllocaInst *XVal = Builder.CreateAlloca(IntTy);
@@ -4167,6 +4195,8 @@ TEST_F(OpenMPIRBuilderTest, OMPAtomicCapture) {
   F->setName("func");
   IRBuilder<> Builder(BB);
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
+
   LLVMContext &Ctx = M->getContext();
   IntegerType *Int32 = Type::getInt32Ty(Ctx);
   AllocaInst *XVal = Builder.CreateAlloca(Int32);
@@ -4216,6 +4246,8 @@ TEST_F(OpenMPIRBuilderTest, OMPAtomicCompare) {
   OMPBuilder.initialize();
   F->setName("func");
   IRBuilder<> Builder(BB);
+
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
 
   LLVMContext &Ctx = M->getContext();
   IntegerType *Int32 = Type::getInt32Ty(Ctx);
@@ -4274,6 +4306,8 @@ TEST_F(OpenMPIRBuilderTest, OMPAtomicCompareCapture) {
   OMPBuilder.initialize();
   F->setName("func");
   IRBuilder<> Builder(BB);
+
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
 
   LLVMContext &Ctx = M->getContext();
   IntegerType *Int32 = Type::getInt32Ty(Ctx);
@@ -4627,6 +4661,7 @@ TEST_F(OpenMPIRBuilderTest, CreateTeams) {
     return Error::success();
   };
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
   ASSERT_EXPECTED_INIT(
       OpenMPIRBuilder::InsertPointTy, AfterIP,
       OMPBuilder.createTeams(Builder, BodyGenCB, /*NumTeamsLower=*/nullptr,
@@ -4878,6 +4913,7 @@ TEST_F(OpenMPIRBuilderTest, CreateTeamsWithNumTeamsAndThreadLimit) {
     return Error::success();
   };
 
+  OpenMPIRBuilder::LocationDescription Loc({Builder.saveIP(), DL});
   ASSERT_EXPECTED_INIT(OpenMPIRBuilder::InsertPointTy, AfterIP,
                        OMPBuilder.createTeams(Builder, BodyGenCB, NumTeamsLower,
                                               NumTeamsUpper, ThreadLimit,
