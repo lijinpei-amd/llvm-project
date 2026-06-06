@@ -557,6 +557,20 @@ static APInt getSizeWithOverflow(const SizeOffsetAPInt &Data) {
   APInt Size = Data.Size;
   APInt Offset = Data.Offset;
 
+  // [ROOT-CAUSE INSTRUMENTATION] Show the wrapped Size, the Offset, and how the
+  // unsigned vs signed OOB comparison disagree. ult(...) is what the buggy code
+  // uses; slt(...) is what correctly detects a negative remaining size.
+  llvm::errs() << "[objsize] getSizeWithOverflow: Size=" << Size.getSExtValue()
+               << " Offset=" << Offset.getSExtValue()
+               << " Size.ult(Offset)=" << (Size.ult(Offset) ? "true" : "false")
+               << " Size.slt(Offset)=" << (Size.slt(Offset) ? "true" : "false")
+               << " => result(ult-path)="
+               << ((Offset.isNegative() || Size.ult(Offset))
+                       ? APInt::getZero(Size.getBitWidth())
+                       : (Size - Offset))
+                      .getZExtValue()
+               << "\n";
+
   if (Offset.isNegative() || Size.ult(Offset))
     return APInt::getZero(Size.getBitWidth());
 
@@ -1181,9 +1195,22 @@ OffsetSpan ObjectSizeOffsetVisitor::combineOffsetRange(OffsetSpan LHS,
     return ObjectSizeOffsetVisitor::unknown();
 
   switch (Options.EvalMode) {
-  case ObjectSizeOpts::Mode::Min:
-    return {LHS.Before.slt(RHS.Before) ? LHS.Before : RHS.Before,
-            LHS.After.slt(RHS.After) ? LHS.After : RHS.After};
+  case ObjectSizeOpts::Mode::Min: {
+    OffsetSpan Combined{LHS.Before.slt(RHS.Before) ? LHS.Before : RHS.Before,
+                        LHS.After.slt(RHS.After) ? LHS.After : RHS.After};
+    // [ROOT-CAUSE INSTRUMENTATION] Before/After are minimized INDEPENDENTLY, so
+    // the combined span need not correspond to either input branch. Print both
+    // inputs and the (possibly inconsistent) combined span.
+    llvm::errs() << "[objsize] combineOffsetRange(Min): LHS{Before="
+                 << LHS.Before.getSExtValue() << ",After="
+                 << LHS.After.getSExtValue() << "} RHS{Before="
+                 << RHS.Before.getSExtValue() << ",After="
+                 << RHS.After.getSExtValue() << "} => Combined{Before="
+                 << Combined.Before.getSExtValue() << ",After="
+                 << Combined.After.getSExtValue() << "} (Size=Before+After="
+                 << (Combined.Before + Combined.After).getSExtValue() << ")\n";
+    return Combined;
+  }
   case ObjectSizeOpts::Mode::Max: {
     return {LHS.Before.sgt(RHS.Before) ? LHS.Before : RHS.Before,
             LHS.After.sgt(RHS.After) ? LHS.After : RHS.After};
