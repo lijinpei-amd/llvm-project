@@ -26537,6 +26537,23 @@ bool BoUpSLP::collectValuesToDemote(
       return false;
     return !isKnownNonNegative(R, SimplifyQuery(*DL));
   });
+  // A scalar of this node may also be consumed by a signed comparison that is
+  // vectorized as a different in-tree node (e.g. a value used both by an
+  // equality compare and a signed compare). Demoting the node truncates the
+  // shared value, which is then re-interpreted as signed at the narrower type
+  // by the signed comparison, changing its result. Detect such uses so that the
+  // zero-extend fast path below (which drops the leading bits without keeping a
+  // sign bit) is not applied to a value that does not fit signed in BitWidth.
+  auto IsUsedInTreeSignedCmp = [&](Value *V) {
+    if (!isa<Instruction>(V))
+      return false;
+    return any_of(V->users(), [&](User *U) {
+      auto *IC = dyn_cast<ICmpInst>(U);
+      if (!IC || !IC->isSigned() || !is_contained(IC->operands(), V))
+        return false;
+      return !getTreeEntries(IC).empty();
+    });
+  };
   auto IsPotentiallyTruncated = [&](Value *V, unsigned &BitWidth) -> bool {
     if (isa<PoisonValue>(V))
       return true;
@@ -26546,20 +26563,31 @@ bool BoUpSLP::collectValuesToDemote(
     // for unsigned values, otherwise may have incorrect casting for reused
     // scalars.
     bool IsSignedVal = !isKnownNonNegative(V, SimplifyQuery(*DL));
-    if ((!IsSignedNode || IsSignedVal) && OrigBitWidth > BitWidth) {
+    // If V feeds a signed comparison node and does not fit signed in BitWidth
+    // bits (its sign bit at the narrower type would be set), the fast path
+    // would flip the comparison. Skip it and let the sign-bits computation
+    // below pick a safe width.
+    bool UnsafeForSignedCmp =
+        OrigBitWidth > BitWidth && IsUsedInTreeSignedCmp(V) &&
+        !MaskedValueIsZero(V, APInt::getBitsSetFrom(OrigBitWidth, BitWidth - 1),
+                           SimplifyQuery(*DL));
+    if ((!IsSignedNode || IsSignedVal) && !UnsafeForSignedCmp &&
+        OrigBitWidth > BitWidth) {
       APInt Mask = APInt::getBitsSetFrom(OrigBitWidth, BitWidth);
       if (MaskedValueIsZero(V, Mask, SimplifyQuery(*DL)))
         return true;
     }
     unsigned NumSignBits = ComputeNumSignBits(V, *DL, AC, nullptr, DT);
     unsigned BitWidth1 = OrigBitWidth - NumSignBits;
-    if (IsSignedNode)
+    // Keep a sign bit so the value can be safely sign-extended back for the
+    // signed comparison that consumes it.
+    if (IsSignedNode || UnsafeForSignedCmp)
       ++BitWidth1;
     if (auto *I = dyn_cast<Instruction>(V)) {
       APInt Mask = DB->getDemandedBits(I);
       unsigned BitWidth2 =
           std::max<unsigned>(1, Mask.getBitWidth() - Mask.countl_zero());
-      while (!IsSignedNode && BitWidth2 < OrigBitWidth) {
+      while (!IsSignedNode && !UnsafeForSignedCmp && BitWidth2 < OrigBitWidth) {
         APInt Mask = APInt::getBitsSetFrom(OrigBitWidth, BitWidth2 - 1);
         if (MaskedValueIsZero(V, Mask, SimplifyQuery(*DL)))
           break;
