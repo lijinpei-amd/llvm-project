@@ -237,7 +237,17 @@ static Value *simplifyX86immShift(const IntrinsicInst &II,
     if (KnownLowerBits.getMaxValue().ult(BitWidth) &&
         (DemandedUpper.isZero() || KnownUpperBits.isZero())) {
       SmallVector<int, 16> ZeroSplat(VWidth, 0);
+      // === ROOT-CAUSE INSTRUMENTATION (X86 psra/psrl/psll shift-by-scalar) ===
+      // Prints the shift-amount operand, whether it is guaranteed not to be
+      // undef/poison, and the splat shufflevector that is emitted to broadcast
+      // lane 0. When the guard prints `false`, lane 0 may be undef/poison and
+      // the splat is NOT uniform across lanes -> miscompile vs. the intrinsic.
+      bool RC_GuaranteedNotUndefPoison = isGuaranteedNotToBeUndefOrPoison(Amt);
+      errs() << "[ROOT-CAUSE psra] Amt = " << *Amt << "\n";
+      errs() << "[ROOT-CAUSE psra] isGuaranteedNotToBeUndefOrPoison(Amt) = "
+             << (RC_GuaranteedNotUndefPoison ? "true" : "false") << "\n";
       Amt = Builder.CreateShuffleVector(Amt, ZeroSplat);
+      errs() << "[ROOT-CAUSE psra] emitted splat = " << *Amt << "\n";
       return (LogicalShift ? (ShiftLeft ? Builder.CreateShl(Vec, Amt)
                                         : Builder.CreateLShr(Vec, Amt))
                            : Builder.CreateAShr(Vec, Amt));
