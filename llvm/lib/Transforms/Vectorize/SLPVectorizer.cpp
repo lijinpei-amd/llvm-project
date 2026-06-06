@@ -26537,6 +26537,21 @@ bool BoUpSLP::collectValuesToDemote(
       return false;
     return !isKnownNonNegative(R, SimplifyQuery(*DL));
   });
+  // ROOTCAUSE-INSTRUMENTATION (showcase branch only): detect, but do NOT fix,
+  // a scalar that also feeds an in-tree SIGNED icmp. This is the value the zext
+  // fast path below incorrectly truncates.
+  auto RC_FeedsInTreeSignedCmp = [&](Value *V) -> ICmpInst * {
+    if (!isa<Instruction>(V))
+      return nullptr;
+    for (User *U : V->users()) {
+      auto *IC = dyn_cast<ICmpInst>(U);
+      if (!IC || !IC->isSigned() || !is_contained(IC->operands(), V))
+        continue;
+      if (!getTreeEntries(IC).empty())
+        return IC;
+    }
+    return nullptr;
+  };
   auto IsPotentiallyTruncated = [&](Value *V, unsigned &BitWidth) -> bool {
     if (isa<PoisonValue>(V))
       return true;
@@ -26548,8 +26563,31 @@ bool BoUpSLP::collectValuesToDemote(
     bool IsSignedVal = !isKnownNonNegative(V, SimplifyQuery(*DL));
     if ((!IsSignedNode || IsSignedVal) && OrigBitWidth > BitWidth) {
       APInt Mask = APInt::getBitsSetFrom(OrigBitWidth, BitWidth);
-      if (MaskedValueIsZero(V, Mask, SimplifyQuery(*DL)))
+      if (MaskedValueIsZero(V, Mask, SimplifyQuery(*DL))) {
+        // ROOTCAUSE-INSTRUMENTATION: the zext fast path is about to declare V
+        // demotable to BitWidth, dropping its leading bits with NO sign bit
+        // preserved. If V also feeds an in-tree signed icmp and its sign bit at
+        // the narrower type would be set, this truncation flips that compare.
+        if (ICmpInst *SCmp = RC_FeedsInTreeSignedCmp(V)) {
+          bool SignBitSetAtNewWidth = !MaskedValueIsZero(
+              V, APInt::getBitsSetFrom(OrigBitWidth, BitWidth - 1),
+              SimplifyQuery(*DL));
+          errs() << "[ROOTCAUSE] zext fast path DEMOTES value used by signed "
+                    "icmp\n";
+          errs() << "[ROOTCAUSE]   demoted value : " << *V << "\n";
+          errs() << "[ROOTCAUSE]   OrigBitWidth=" << OrigBitWidth
+                 << "  chosen BitWidth=" << BitWidth << "\n";
+          errs() << "[ROOTCAUSE]   in-tree signed icmp user : " << *SCmp
+                 << "\n";
+          errs() << "[ROOTCAUSE]   sign bit set at i" << BitWidth
+                 << " (UNSAFE for signed cmp)? "
+                 << (SignBitSetAtNewWidth ? "YES" : "no") << "\n";
+          errs() << "[ROOTCAUSE]   --> returning true: value WILL be truncated "
+                    "to i"
+                 << BitWidth << ", signed icmp result will flip\n";
+        }
         return true;
+      }
     }
     unsigned NumSignBits = ComputeNumSignBits(V, *DL, AC, nullptr, DT);
     unsigned BitWidth1 = OrigBitWidth - NumSignBits;
