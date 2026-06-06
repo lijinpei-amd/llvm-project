@@ -13,10 +13,14 @@
 
 #include "llvm/Support/KnownFPClass.h"
 #include "llvm/ADT/APFloat.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/KnownBits.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
+
+#define DEBUG_TYPE "known-fpclass-canon"
 
 KnownFPClass::KnownFPClass(const APFloat &C)
     : KnownFPClasses(C.classify()), SignBit(C.isNegative()) {}
@@ -228,8 +232,34 @@ KnownFPClass KnownFPClass::canonicalize(const KnownFPClass &KnownSrc,
 
   if (DenormMode.Input == DenormalMode::PositiveZero ||
       (DenormMode.Output == DenormalMode::PositiveZero &&
-       DenormMode.Input == DenormalMode::IEEE))
+       DenormMode.Input == DenormalMode::IEEE)) {
+    // ====== ROOT-CAUSE INSTRUMENTATION (showcase only) ======
+    LLVM_DEBUG({
+      dbgs() << "[canon-denormal-negzero] PositiveZero branch entered\n";
+      dbgs() << "  DenormMode = ";
+      DenormMode.print(dbgs());
+      dbgs() << "\n";
+      dbgs() << "  KnownSrc mask           = " << KnownSrc.KnownFPClasses
+             << "\n";
+      dbgs() << "  KnownSrc.isKnownNever(fcNegZero) = "
+             << KnownSrc.isKnownNever(fcNegZero) << "\n";
+      dbgs() << "  mask BEFORE knownNot(fcNegZero) = " << Known.KnownFPClasses
+             << "  (fcNegZero present? "
+             << ((Known.KnownFPClasses & fcNegZero) != fcNone) << ")\n";
+    });
+
     Known.knownNot(fcNegZero);
+
+    LLVM_DEBUG({
+      dbgs() << "  mask AFTER  knownNot(fcNegZero) = " << Known.KnownFPClasses
+             << "  (fcNegZero present? "
+             << ((Known.KnownFPClasses & fcNegZero) != fcNone) << ")\n";
+      if (!KnownSrc.isKnownNever(fcNegZero))
+        dbgs() << "  >>> BUG: fcNegZero unconditionally cleared even though "
+                  "source MAY be -0.0\n";
+    });
+    // ====== END INSTRUMENTATION ======
+  }
 
   return Known;
 }
