@@ -3786,6 +3786,36 @@ isAllocSiteRemovable(Instruction *AI, SmallVectorImpl<Instruction *> &Users,
         };
         auto *CB = dyn_cast<CallBase>(AI);
         LibFunc TheLibFunc;
+        // === ROOT-CAUSE INSTRUMENTATION (remove before merging) ===
+        if (CB) {
+          AllocFnKind RC_Kind = CB->getAttributes().getAllocKind();
+          if (const Function *RC_Callee = CB->getCalledFunction())
+            RC_Kind |= RC_Callee->getAttributes().getAllocKind();
+          bool RC_IsAligned =
+              (RC_Kind & AllocFnKind::Aligned) != AllocFnKind::Unknown;
+          LibFunc RC_LF;
+          bool RC_HasLF = CB->getCalledFunction() &&
+                          TLI.getLibFunc(*CB->getCalledFunction(), RC_LF) &&
+                          TLI.has(RC_LF);
+          bool RC_IsAlignedAllocLibFunc =
+              RC_HasLF && RC_LF == LibFunc_aligned_alloc;
+          errs() << "[ROOTCAUSE] isAllocSiteRemovable ICmp on call to '"
+                 << (CB->getCalledFunction()
+                         ? CB->getCalledFunction()->getName()
+                         : "<indirect>")
+                 << "': allockind Aligned="
+                 << (RC_IsAligned ? "YES" : "no")
+                 << ", resolved-libfunc-is-aligned_alloc="
+                 << (RC_IsAlignedAllocLibFunc ? "YES" : "no")
+                 << " -> guard "
+                 << (RC_IsAlignedAllocLibFunc ? "FIRES" : "SKIPPED")
+                 << ".\n";
+          if (RC_IsAligned && !RC_IsAlignedAllocLibFunc)
+            errs() << "[ROOTCAUSE]   BUG: aligned allocator NOT keyed by "
+                      "LibFunc_aligned_alloc; bail-out skipped; compare '"
+                   << *ICI << "' will be folded to a constant.\n";
+        }
+        // === END INSTRUMENTATION ===
         if (CB && TLI.getLibFunc(*CB->getCalledFunction(), TheLibFunc) &&
             TLI.has(TheLibFunc) && TheLibFunc == LibFunc_aligned_alloc &&
             !AlignmentAndSizeKnownValid(CB))
