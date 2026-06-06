@@ -70,7 +70,6 @@ entry:
 }
 
 ; SROA would produce IR like this if applied to @possible_out_of_bounds_gep_i16.
-; FIXME: The %objsize_min result here is invalid.
 define i32 @possible_out_of_bounds_gep_i16_sroa(i1 %c0, i1 %c1) {
 ; CHECK-LABEL: define i32 @possible_out_of_bounds_gep_i16_sroa(
 ; CHECK-SAME: i1 [[C0:%.*]], i1 [[C1:%.*]]) {
@@ -79,7 +78,7 @@ define i32 @possible_out_of_bounds_gep_i16_sroa(i1 %c0, i1 %c1) {
 ; CHECK-NEXT:    [[DOTSROA_GEP:%.*]] = getelementptr i8, ptr [[OBJ]], i16 2
 ; CHECK-NEXT:    [[DOTSROA_GEP1:%.*]] = getelementptr i8, ptr [[OBJ]], i16 10
 ; CHECK-NEXT:    [[OFFSET_SROA_SEL:%.*]] = select i1 [[C0]], ptr [[DOTSROA_GEP]], ptr [[DOTSROA_GEP1]]
-; CHECK-NEXT:    [[RES:%.*]] = select i1 [[C1]], i32 3, i32 65531
+; CHECK-NEXT:    [[RES:%.*]] = select i1 [[C1]], i32 3, i32 0
 ; CHECK-NEXT:    ret i32 [[RES]]
 ;
 entry:

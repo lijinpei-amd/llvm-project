@@ -557,7 +557,14 @@ static APInt getSizeWithOverflow(const SizeOffsetAPInt &Data) {
   APInt Size = Data.Size;
   APInt Offset = Data.Offset;
 
-  if (Offset.isNegative() || Size.ult(Offset))
+  // The remaining size after the pointed-to location is Size - Offset. We must
+  // clamp to zero both when the pointer is before the start of the object
+  // (Offset is negative) and when it is past the end (the remaining size is
+  // negative). Combining Min/Max ranges from a select/phi can produce a Size
+  // (Before + After) whose value has wrapped negative when the After field is
+  // negative, so an unsigned Size < Offset check would miss the out-of-bounds
+  // case. Use a signed comparison so a negative remaining size is detected.
+  if (Offset.isNegative() || Size.slt(Offset))
     return APInt::getZero(Size.getBitWidth());
 
   return Size - Offset;
