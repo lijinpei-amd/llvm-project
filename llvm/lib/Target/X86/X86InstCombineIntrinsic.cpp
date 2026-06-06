@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "X86TargetTransformInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/Support/KnownBits.h"
@@ -237,6 +238,13 @@ static Value *simplifyX86immShift(const IntrinsicInst &II,
     if (KnownLowerBits.getMaxValue().ult(BitWidth) &&
         (DemandedUpper.isZero() || KnownUpperBits.isZero())) {
       SmallVector<int, 16> ZeroSplat(VWidth, 0);
+      // The x86 shift intrinsics use a single scalar shift amount taken from
+      // the low element, applied uniformly to every lane. If that element may
+      // be undef/poison, freeze it first: splatting a possibly-undef element
+      // does not guarantee a uniform value across lanes, which would not match
+      // the intrinsic semantics (see PR / Alive2 'Value mismatch').
+      if (!isGuaranteedNotToBeUndefOrPoison(Amt))
+        Amt = Builder.CreateFreeze(Amt);
       Amt = Builder.CreateShuffleVector(Amt, ZeroSplat);
       return (LogicalShift ? (ShiftLeft ? Builder.CreateShl(Vec, Amt)
                                         : Builder.CreateLShr(Vec, Amt))

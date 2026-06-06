@@ -2680,7 +2680,8 @@ define <32 x i16> @avx512_psllv_w_512_poison(<32 x i16> %v) {
 
 define <8 x i16> @sse2_psra_w_128_masked(<8 x i16> %v, <8 x i16> %a) {
 ; CHECK-LABEL: @sse2_psra_w_128_masked(
-; CHECK-NEXT:    [[TMP1:%.*]] = and <8 x i16> [[A:%.*]], <i16 15, i16 poison, i16 poison, i16 poison, i16 poison, i16 poison, i16 poison, i16 poison>
+; CHECK-NEXT:    [[TMP4:%.*]] = and <8 x i16> [[A:%.*]], <i16 15, i16 0, i16 0, i16 0, i16 poison, i16 poison, i16 poison, i16 poison>
+; CHECK-NEXT:    [[TMP1:%.*]] = freeze <8 x i16> [[TMP4]]
 ; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <8 x i16> [[TMP1]], <8 x i16> poison, <8 x i32> zeroinitializer
 ; CHECK-NEXT:    [[TMP3:%.*]] = ashr <8 x i16> [[V:%.*]], [[TMP2]]
 ; CHECK-NEXT:    ret <8 x i16> [[TMP3]]
@@ -2692,7 +2693,8 @@ define <8 x i16> @sse2_psra_w_128_masked(<8 x i16> %v, <8 x i16> %a) {
 
 define <8 x i32> @avx2_psra_d_256_masked(<8 x i32> %v, <4 x i32> %a) {
 ; CHECK-LABEL: @avx2_psra_d_256_masked(
-; CHECK-NEXT:    [[TMP1:%.*]] = and <4 x i32> [[A:%.*]], <i32 31, i32 poison, i32 poison, i32 poison>
+; CHECK-NEXT:    [[TMP4:%.*]] = and <4 x i32> [[A:%.*]], <i32 31, i32 0, i32 poison, i32 poison>
+; CHECK-NEXT:    [[TMP1:%.*]] = freeze <4 x i32> [[TMP4]]
 ; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <4 x i32> [[TMP1]], <4 x i32> poison, <8 x i32> zeroinitializer
 ; CHECK-NEXT:    [[TMP3:%.*]] = ashr <8 x i32> [[V:%.*]], [[TMP2]]
 ; CHECK-NEXT:    ret <8 x i32> [[TMP3]]
@@ -2705,7 +2707,8 @@ define <8 x i32> @avx2_psra_d_256_masked(<8 x i32> %v, <4 x i32> %a) {
 define <8 x i64> @avx512_psra_q_512_masked(<8 x i64> %v, <2 x i64> %a) {
 ; CHECK-LABEL: @avx512_psra_q_512_masked(
 ; CHECK-NEXT:    [[TMP1:%.*]] = and <2 x i64> [[A:%.*]], <i64 63, i64 poison>
-; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <2 x i64> [[TMP1]], <2 x i64> poison, <8 x i32> zeroinitializer
+; CHECK-NEXT:    [[TMP4:%.*]] = freeze <2 x i64> [[TMP1]]
+; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <2 x i64> [[TMP4]], <2 x i64> poison, <8 x i32> zeroinitializer
 ; CHECK-NEXT:    [[TMP3:%.*]] = ashr <8 x i64> [[V:%.*]], [[TMP2]]
 ; CHECK-NEXT:    ret <8 x i64> [[TMP3]]
 ;
@@ -2716,7 +2719,8 @@ define <8 x i64> @avx512_psra_q_512_masked(<8 x i64> %v, <2 x i64> %a) {
 
 define <4 x i32> @sse2_psrl_d_128_masked(<4 x i32> %v, <4 x i32> %a) {
 ; CHECK-LABEL: @sse2_psrl_d_128_masked(
-; CHECK-NEXT:    [[TMP1:%.*]] = and <4 x i32> [[A:%.*]], <i32 31, i32 poison, i32 poison, i32 poison>
+; CHECK-NEXT:    [[TMP4:%.*]] = and <4 x i32> [[A:%.*]], <i32 31, i32 0, i32 poison, i32 poison>
+; CHECK-NEXT:    [[TMP1:%.*]] = freeze <4 x i32> [[TMP4]]
 ; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <4 x i32> [[TMP1]], <4 x i32> poison, <4 x i32> zeroinitializer
 ; CHECK-NEXT:    [[TMP3:%.*]] = lshr <4 x i32> [[V:%.*]], [[TMP2]]
 ; CHECK-NEXT:    ret <4 x i32> [[TMP3]]
@@ -2729,7 +2733,8 @@ define <4 x i32> @sse2_psrl_d_128_masked(<4 x i32> %v, <4 x i32> %a) {
 define <4 x i64> @avx2_psrl_q_256_masked(<4 x i64> %v, <2 x i64> %a) {
 ; CHECK-LABEL: @avx2_psrl_q_256_masked(
 ; CHECK-NEXT:    [[TMP1:%.*]] = and <2 x i64> [[A:%.*]], <i64 63, i64 poison>
-; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <2 x i64> [[TMP1]], <2 x i64> poison, <4 x i32> zeroinitializer
+; CHECK-NEXT:    [[TMP4:%.*]] = freeze <2 x i64> [[TMP1]]
+; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <2 x i64> [[TMP4]], <2 x i64> poison, <4 x i32> zeroinitializer
 ; CHECK-NEXT:    [[TMP3:%.*]] = lshr <4 x i64> [[V:%.*]], [[TMP2]]
 ; CHECK-NEXT:    ret <4 x i64> [[TMP3]]
 ;
@@ -2740,7 +2745,8 @@ define <4 x i64> @avx2_psrl_q_256_masked(<4 x i64> %v, <2 x i64> %a) {
 
 define <32 x i16> @avx512_psrl_w_512_masked(<32 x i16> %v, <8 x i16> %a) {
 ; CHECK-LABEL: @avx512_psrl_w_512_masked(
-; CHECK-NEXT:    [[TMP1:%.*]] = and <8 x i16> [[A:%.*]], <i16 15, i16 poison, i16 poison, i16 poison, i16 poison, i16 poison, i16 poison, i16 poison>
+; CHECK-NEXT:    [[TMP4:%.*]] = and <8 x i16> [[A:%.*]], <i16 15, i16 0, i16 0, i16 0, i16 poison, i16 poison, i16 poison, i16 poison>
+; CHECK-NEXT:    [[TMP1:%.*]] = freeze <8 x i16> [[TMP4]]
 ; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <8 x i16> [[TMP1]], <8 x i16> poison, <32 x i32> zeroinitializer
 ; CHECK-NEXT:    [[TMP3:%.*]] = lshr <32 x i16> [[V:%.*]], [[TMP2]]
 ; CHECK-NEXT:    ret <32 x i16> [[TMP3]]
@@ -2753,7 +2759,8 @@ define <32 x i16> @avx512_psrl_w_512_masked(<32 x i16> %v, <8 x i16> %a) {
 define <2 x i64> @sse2_psll_q_128_masked(<2 x i64> %v, <2 x i64> %a) {
 ; CHECK-LABEL: @sse2_psll_q_128_masked(
 ; CHECK-NEXT:    [[TMP1:%.*]] = and <2 x i64> [[A:%.*]], <i64 63, i64 poison>
-; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <2 x i64> [[TMP1]], <2 x i64> poison, <2 x i32> zeroinitializer
+; CHECK-NEXT:    [[TMP4:%.*]] = freeze <2 x i64> [[TMP1]]
+; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <2 x i64> [[TMP4]], <2 x i64> poison, <2 x i32> zeroinitializer
 ; CHECK-NEXT:    [[TMP3:%.*]] = shl <2 x i64> [[V:%.*]], [[TMP2]]
 ; CHECK-NEXT:    ret <2 x i64> [[TMP3]]
 ;
@@ -2764,7 +2771,8 @@ define <2 x i64> @sse2_psll_q_128_masked(<2 x i64> %v, <2 x i64> %a) {
 
 define <16 x i16> @avx2_psll_w_256_masked(<16 x i16> %v, <8 x i16> %a) {
 ; CHECK-LABEL: @avx2_psll_w_256_masked(
-; CHECK-NEXT:    [[TMP1:%.*]] = and <8 x i16> [[A:%.*]], <i16 15, i16 poison, i16 poison, i16 poison, i16 poison, i16 poison, i16 poison, i16 poison>
+; CHECK-NEXT:    [[TMP4:%.*]] = and <8 x i16> [[A:%.*]], <i16 15, i16 0, i16 0, i16 0, i16 poison, i16 poison, i16 poison, i16 poison>
+; CHECK-NEXT:    [[TMP1:%.*]] = freeze <8 x i16> [[TMP4]]
 ; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <8 x i16> [[TMP1]], <8 x i16> poison, <16 x i32> zeroinitializer
 ; CHECK-NEXT:    [[TMP3:%.*]] = shl <16 x i16> [[V:%.*]], [[TMP2]]
 ; CHECK-NEXT:    ret <16 x i16> [[TMP3]]
@@ -2776,7 +2784,8 @@ define <16 x i16> @avx2_psll_w_256_masked(<16 x i16> %v, <8 x i16> %a) {
 
 define <16 x i32> @avx512_psll_d_512_masked(<16 x i32> %v, <4 x i32> %a) {
 ; CHECK-LABEL: @avx512_psll_d_512_masked(
-; CHECK-NEXT:    [[TMP1:%.*]] = and <4 x i32> [[A:%.*]], <i32 31, i32 poison, i32 poison, i32 poison>
+; CHECK-NEXT:    [[TMP4:%.*]] = and <4 x i32> [[A:%.*]], <i32 31, i32 0, i32 poison, i32 poison>
+; CHECK-NEXT:    [[TMP1:%.*]] = freeze <4 x i32> [[TMP4]]
 ; CHECK-NEXT:    [[TMP2:%.*]] = shufflevector <4 x i32> [[TMP1]], <4 x i32> poison, <16 x i32> zeroinitializer
 ; CHECK-NEXT:    [[TMP3:%.*]] = shl <16 x i32> [[V:%.*]], [[TMP2]]
 ; CHECK-NEXT:    ret <16 x i32> [[TMP3]]
