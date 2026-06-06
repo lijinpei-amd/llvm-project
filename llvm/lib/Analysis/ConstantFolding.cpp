@@ -57,6 +57,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <cerrno>
 #include <cfenv>
@@ -360,6 +361,31 @@ Constant *FoldBitCast(Constant *C, Type *DestTy, const DataLayout &DL) {
         if (isa<PoisonValue>(Element))
           PoisonMask.setBits(BitPosition, BitPosition + SrcBitSize);
         SrcValue = APInt::getZero(DstBitSize);
+
+        // ===== ROOT-CAUSE INSTRUMENTATION (undef element path) =====
+        auto HexOf = [](const APInt &V) {
+          SmallString<64> S;
+          V.toString(S, /*Radix=*/16, /*Signed=*/false);
+          return std::string(S);
+        };
+        errs() << "[RC] undef elt: SrcBitSize=" << SrcBitSize
+               << " DstBitSize=" << DstBitSize
+               << " BitPosition=" << BitPosition
+               << " SrcValue.width=" << SrcValue.getBitWidth()
+               << " (placeholder is " << SrcValue.getBitWidth()
+               << "-bit, but element is only " << SrcBitSize << "-bit)\n";
+        errs() << "[RC]   Buffer BEFORE insertBits = 0x" << HexOf(Buffer) << "\n";
+        errs() << "[RC]   insertBits will clear ["
+               << BitPosition << ", " << (BitPosition + SrcValue.getBitWidth())
+               << "); element only owns ["
+               << BitPosition << ", " << (BitPosition + SrcBitSize)
+               << ") -> " << (SrcValue.getBitWidth() - SrcBitSize)
+               << " neighbor bits clobbered\n";
+        Buffer.insertBits(SrcValue, BitPosition);
+        errs() << "[RC]   Buffer AFTER  insertBits = 0x" << HexOf(Buffer) << "\n";
+        BufferBitSize += SrcBitSize;
+        continue;
+        // ===== END ROOT-CAUSE INSTRUMENTATION =====
       } else {
         auto *Src = dyn_cast<ConstantInt>(Element);
         if (!Src)
