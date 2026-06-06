@@ -252,11 +252,18 @@ define ptr addrspace(1) @gep_of_sub_ptrtoaddr_addrsize(ptr addrspace(1) %p, i32 
   ret ptr addrspace(1) %gep2
 }
 
+; The ashr is not exact, so the low bit of (gep1.addr - p.addr) is dropped and
+; (ashr >> 1) << 1 does not reconstruct the original offset. Must not fold.
 define ptr @gep_of_sub_ptrtoaddr_ashr(ptr %p, i64 %x) {
 ; CHECK-LABEL: define ptr @gep_of_sub_ptrtoaddr_ashr(
 ; CHECK-SAME: ptr [[P:%.*]], i64 [[X:%.*]]) {
 ; CHECK-NEXT:    [[GEP1:%.*]] = getelementptr i8, ptr [[P]], i64 [[X]]
-; CHECK-NEXT:    ret ptr [[GEP1]]
+; CHECK-NEXT:    [[GEP1_ADDR:%.*]] = ptrtoaddr ptr [[GEP1]] to i64
+; CHECK-NEXT:    [[P_ADDR:%.*]] = ptrtoaddr ptr [[P]] to i64
+; CHECK-NEXT:    [[SUB:%.*]] = sub i64 [[GEP1_ADDR]], [[P_ADDR]]
+; CHECK-NEXT:    [[ASHR:%.*]] = ashr i64 [[SUB]], 1
+; CHECK-NEXT:    [[GEP2:%.*]] = getelementptr i16, ptr [[P]], i64 [[ASHR]]
+; CHECK-NEXT:    ret ptr [[GEP2]]
 ;
   %gep1 = getelementptr i8, ptr %p, i64 %x
   %gep1.addr = ptrtoaddr ptr %gep1 to i64
@@ -267,8 +274,45 @@ define ptr @gep_of_sub_ptrtoaddr_ashr(ptr %p, i64 %x) {
   ret ptr %gep2
 }
 
+define ptr @gep_of_sub_ptrtoaddr_ashr_exact(ptr %p, i64 %x) {
+; CHECK-LABEL: define ptr @gep_of_sub_ptrtoaddr_ashr_exact(
+; CHECK-SAME: ptr [[P:%.*]], i64 [[X:%.*]]) {
+; CHECK-NEXT:    [[GEP1:%.*]] = getelementptr i8, ptr [[P]], i64 [[X]]
+; CHECK-NEXT:    ret ptr [[GEP1]]
+;
+  %gep1 = getelementptr i8, ptr %p, i64 %x
+  %gep1.addr = ptrtoaddr ptr %gep1 to i64
+  %p.addr = ptrtoaddr ptr %p to i64
+  %sub = sub i64 %gep1.addr, %p.addr
+  %ashr = ashr exact i64 %sub, 1
+  %gep2 = getelementptr i16, ptr %p, i64 %ashr
+  ret ptr %gep2
+}
+
+; The sdiv is not exact, so the remainder of (gep1.addr - p.addr) / 3 is dropped
+; and (sdiv * 3) does not reconstruct the original offset. Must not fold.
 define ptr addrspace(1) @gep_of_sub_ptrtoaddr_ashr_addrsize(ptr addrspace(1) %p, i32 %x) {
 ; CHECK-LABEL: define ptr addrspace(1) @gep_of_sub_ptrtoaddr_ashr_addrsize(
+; CHECK-SAME: ptr addrspace(1) [[P:%.*]], i32 [[X:%.*]]) {
+; CHECK-NEXT:    [[GEP1:%.*]] = getelementptr i8, ptr addrspace(1) [[P]], i32 [[X]]
+; CHECK-NEXT:    [[GEP1_ADDR:%.*]] = ptrtoaddr ptr addrspace(1) [[GEP1]] to i32
+; CHECK-NEXT:    [[P_ADDR:%.*]] = ptrtoaddr ptr addrspace(1) [[P]] to i32
+; CHECK-NEXT:    [[SUB:%.*]] = sub i32 [[GEP1_ADDR]], [[P_ADDR]]
+; CHECK-NEXT:    [[SDIV:%.*]] = sdiv i32 [[SUB]], 3
+; CHECK-NEXT:    [[GEP2:%.*]] = getelementptr [3 x i8], ptr addrspace(1) [[P]], i32 [[SDIV]]
+; CHECK-NEXT:    ret ptr addrspace(1) [[GEP2]]
+;
+  %gep1 = getelementptr i8, ptr addrspace(1) %p, i32 %x
+  %gep1.addr = ptrtoaddr ptr addrspace(1) %gep1 to i32
+  %p.addr = ptrtoaddr ptr addrspace(1) %p to i32
+  %sub = sub i32 %gep1.addr, %p.addr
+  %sdiv = sdiv i32 %sub, 3
+  %gep2 = getelementptr [3 x i8], ptr addrspace(1) %p, i32 %sdiv
+  ret ptr addrspace(1) %gep2
+}
+
+define ptr addrspace(1) @gep_of_sub_ptrtoaddr_ashr_addrsize_exact(ptr addrspace(1) %p, i32 %x) {
+; CHECK-LABEL: define ptr addrspace(1) @gep_of_sub_ptrtoaddr_ashr_addrsize_exact(
 ; CHECK-SAME: ptr addrspace(1) [[P:%.*]], i32 [[X:%.*]]) {
 ; CHECK-NEXT:    [[GEP1:%.*]] = getelementptr i8, ptr addrspace(1) [[P]], i32 [[X]]
 ; CHECK-NEXT:    ret ptr addrspace(1) [[GEP1]]
@@ -277,7 +321,7 @@ define ptr addrspace(1) @gep_of_sub_ptrtoaddr_ashr_addrsize(ptr addrspace(1) %p,
   %gep1.addr = ptrtoaddr ptr addrspace(1) %gep1 to i32
   %p.addr = ptrtoaddr ptr addrspace(1) %p to i32
   %sub = sub i32 %gep1.addr, %p.addr
-  %sdiv = sdiv i32 %sub, 3
+  %sdiv = sdiv exact i32 %sub, 3
   %gep2 = getelementptr [3 x i8], ptr addrspace(1) %p, i32 %sdiv
   ret ptr addrspace(1) %gep2
 }
