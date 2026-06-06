@@ -425,6 +425,31 @@ Value *VNCoercion::getMemInstValueForLoad(MemIntrinsic *SrcInst,
     // memset(P, 'x', 1234) -> splat('x'), even if x is a variable, and
     // independently of what the offset is.
     Value *Val = MSI->getValue();
+
+    // === ROOT-CAUSE INSTRUMENTATION (issue #1989665) ===
+    // We are about to reconstruct a wide-typed load value by splatting the
+    // memset's stored SSA value with a zext + shl/or chain. A real memset
+    // writes ONE byte value to every byte, so a wide reload must have all
+    // bytes equal. But the splat reuses the *same SSA value* multiple times,
+    // and under LLVM undef semantics each use of an undef value may
+    // independently take a different value -> bytes can diverge. We log the
+    // splatted value, whether it is a Constant, and whether it is guaranteed
+    // not to be undef/poison (the property that makes the splat sound).
+    {
+      bool IsConst = isa<Constant>(Val);
+      bool NotUndefPoison = isGuaranteedNotToBeUndefOrPoison(Val);
+      errs() << "[VNCoerce-RC] getMemInstValueForLoad: memset splat into wide "
+                "load\n";
+      errs() << "[VNCoerce-RC]   LoadSize(bytes) = " << LoadSize << "\n";
+      errs() << "[VNCoerce-RC]   splatted value  = " << *Val << "\n";
+      errs() << "[VNCoerce-RC]   isa<Constant>   = " << IsConst << "\n";
+      errs() << "[VNCoerce-RC]   guaranteedNotUndefOrPoison = " << NotUndefPoison
+             << "  (this is the soundness precondition; false here)\n";
+      errs() << "[VNCoerce-RC]   -> splat reuses this NON-frozen value "
+                "LoadSize times; undef uses may diverge across bytes\n";
+    }
+    // === END INSTRUMENTATION ===
+
     if (LoadSize != 1)
       Val =
           Builder.CreateZExtOrBitCast(Val, IntegerType::get(Ctx, LoadSize * 8));
@@ -447,6 +472,16 @@ Value *VNCoercion::getMemInstValueForLoad(MemIntrinsic *SrcInst,
       Val = Builder.CreateOr(OneElt, ShVal);
       ++NumBytesSet;
     }
+
+    // === ROOT-CAUSE INSTRUMENTATION: dump emitted broadcast chain ===
+    errs() << "[VNCoerce-RC]   emitted splat root value = " << *Val << "\n";
+    if (auto *I = dyn_cast<Instruction>(Val)) {
+      errs() << "[VNCoerce-RC]   emitted broadcast IR (built from non-frozen "
+                "value):\n";
+      for (Instruction &Inst : *I->getParent())
+        errs() << "[VNCoerce-RC]     " << Inst << "\n";
+    }
+    // === END INSTRUMENTATION ===
 
     return coerceAvailableValueToLoadType(Val, LoadTy, Builder,
                                           InsertPt->getFunction());
