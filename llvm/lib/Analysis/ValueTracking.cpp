@@ -10449,6 +10449,28 @@ ConstantRange llvm::computeConstantRange(const Value *V, bool ForSigned,
         CR = ConstantRange::getNonEmpty(
             APInt(BitWidth, MinExp, /*isSigned=*/true),
             APInt(BitWidth, MaxExp + 1, /*isSigned=*/true));
+
+        // ROOT-CAUSE INSTRUMENTATION (frexp clamp-min miscompile).
+        // Enabled via env var FREXP_RC_DEBUG=1. Shows that a bounded
+        // ConstantRange is returned for the frexp integer exponent even when
+        // the source FP value may be NaN/Inf (whose exponent is unspecified
+        // per LangRef), which lets InstCombine drop a clamp such as
+        // smax(exp, -148).
+        if (::getenv("FREXP_RC_DEBUG")) {
+          dbgs() << "[frexp-rootcause] computeConstantRange for frexp exponent\n"
+                 << "  FrexpSrc          = " << *FrexpSrc << "\n"
+                 << "  query FPClass mask= fcSubnormal ONLY (nan/inf NOT "
+                    "queried)\n"
+                 << "  KnownSrc.isKnownNeverNaN()      = "
+                 << KnownSrc.isKnownNeverNaN() << "\n"
+                 << "  KnownSrc.isKnownNeverInfinity() = "
+                 << KnownSrc.isKnownNeverInfinity() << "\n"
+                 << "  KnownSrc.isKnownNeverSubnormal()= "
+                 << KnownSrc.isKnownNeverSubnormal() << "\n"
+                 << "  --> returned BOUNDED ConstantRange = " << CR << "\n"
+                 << "      (lower=" << MinExp << ", upper=" << (MaxExp + 1)
+                 << ") despite possible nan/inf source\n";
+        }
       }
     }
   }
