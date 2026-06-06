@@ -10434,21 +10434,24 @@ ConstantRange llvm::computeConstantRange(const Value *V, bool ForSigned,
       // It should be possible to implement this for any type, but this logic
       // only computes the range assuming standard subnormal handling.
       if (APFloat::isIEEELikeFP(FltSem)) {
-        KnownFPClass KnownSrc =
-            computeKnownFPClass(FrexpSrc, fcSubnormal, SQ, Depth + 1);
+        KnownFPClass KnownSrc = computeKnownFPClass(
+            FrexpSrc, fcSubnormal | fcNan | fcInf, SQ, Depth + 1);
 
-        // Exponent result is (src == 0) ? 0 : ilogb(src) + 1, and unspecified
-        // for inf/nan.
-        int MinExp = APFloat::semanticsMinExponent(FltSem) + 1;
+        // The exponent result is unspecified if the source is inf or nan, so we
+        // can only bound the range when those cases are excluded.
+        if (KnownSrc.isKnownNeverNaN() && KnownSrc.isKnownNeverInfinity()) {
+          // Exponent result is (src == 0) ? 0 : ilogb(src) + 1.
+          int MinExp = APFloat::semanticsMinExponent(FltSem) + 1;
 
-        // Offset to find the true minimum exponent value for a denormal.
-        if (!KnownSrc.isKnownNeverSubnormal())
-          MinExp -= (APFloat::semanticsPrecision(FltSem) - 1);
+          // Offset to find the true minimum exponent value for a denormal.
+          if (!KnownSrc.isKnownNeverSubnormal())
+            MinExp -= (APFloat::semanticsPrecision(FltSem) - 1);
 
-        int MaxExp = APFloat::semanticsMaxExponent(FltSem) + 1;
-        CR = ConstantRange::getNonEmpty(
-            APInt(BitWidth, MinExp, /*isSigned=*/true),
-            APInt(BitWidth, MaxExp + 1, /*isSigned=*/true));
+          int MaxExp = APFloat::semanticsMaxExponent(FltSem) + 1;
+          CR = ConstantRange::getNonEmpty(
+              APInt(BitWidth, MinExp, /*isSigned=*/true),
+              APInt(BitWidth, MaxExp + 1, /*isSigned=*/true));
+        }
       }
     }
   }
