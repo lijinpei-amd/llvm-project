@@ -425,9 +425,20 @@ Value *VNCoercion::getMemInstValueForLoad(MemIntrinsic *SrcInst,
     // memset(P, 'x', 1234) -> splat('x'), even if x is a variable, and
     // independently of what the offset is.
     Value *Val = MSI->getValue();
-    if (LoadSize != 1)
+    if (LoadSize != 1) {
+      // The memset stores a single byte value to every byte of memory.
+      // Reloading those bytes as a wider type therefore yields a value whose
+      // bytes are all equal. Splatting a non-constant stored value directly
+      // would not preserve that property if the value is undef, because each
+      // use of an undef value may independently take a different value. Freeze
+      // a non-constant value first so all splatted bytes are guaranteed to be
+      // equal. Constants are left untouched so that paths relying on constant
+      // folding (e.g. forwarding to non-integral pointer loads) keep working.
+      if (!isa<Constant>(Val))
+        Val = Builder.CreateFreeze(Val);
       Val =
           Builder.CreateZExtOrBitCast(Val, IntegerType::get(Ctx, LoadSize * 8));
+    }
     Value *OneElt = Val;
 
     // Splat the value out to the right number of bits.

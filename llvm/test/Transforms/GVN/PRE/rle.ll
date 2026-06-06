@@ -217,7 +217,8 @@ define float @memset_to_float_local(ptr %A, i8 %Val) nounwind ssp {
 ; CHECK-SAME: ptr [[A:%.*]], i8 [[VAL:%.*]]) #[[ATTR0]] {
 ; CHECK-NEXT:  [[ENTRY:.*:]]
 ; CHECK-NEXT:    tail call void @llvm.memset.p0.i64(ptr [[A]], i8 [[VAL]], i64 400, i1 false)
-; CHECK-NEXT:    [[TMP0:%.*]] = zext i8 [[VAL]] to i32
+; CHECK-NEXT:    [[TMP6:%.*]] = freeze i8 [[VAL]]
+; CHECK-NEXT:    [[TMP0:%.*]] = zext i8 [[TMP6]] to i32
 ; CHECK-NEXT:    [[TMP1:%.*]] = shl i32 [[TMP0]], 8
 ; CHECK-NEXT:    [[TMP2:%.*]] = or i32 [[TMP0]], [[TMP1]]
 ; CHECK-NEXT:    [[TMP3:%.*]] = shl i32 [[TMP2]], 16
