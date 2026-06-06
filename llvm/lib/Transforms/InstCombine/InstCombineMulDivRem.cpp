@@ -616,8 +616,18 @@ Instruction *InstCombinerImpl::foldFPSignBitOps(BinaryOperator &I) {
 
   // fabs(X) * fabs(X) -> X * X
   // fabs(X) / fabs(X) -> X / X
-  if (Op0 == Op1 && match(Op0, m_FAbs(m_Value(X))))
+  if (Op0 == Op1 && match(Op0, m_FAbs(m_Value(X)))) {
+    // ===== ROOT-CAUSE INSTRUMENTATION (fabs-squared-signzero) =====
+    errs() << "[fabs-squared-rootcause] FIRING fold fabs(X)" << "*/"
+           << " fabs(X) -> X" << "*/" << "X on instr: " << I << "\n";
+    errs() << "[fabs-squared-rootcause]   matched X = " << *X << "\n";
+    errs() << "[fabs-squared-rootcause]   isGuaranteedNotToBeUndef(X) = "
+           << (isGuaranteedNotToBeUndef(X) ? "true" : "false") << "\n";
+    errs() << "[fabs-squared-rootcause]   rewriting to (Opcode X, X) WITHOUT "
+              "freeze: X now used twice\n";
+    // ==============================================================
     return BinaryOperator::CreateWithCopiedFlags(Opcode, X, X, &I);
+  }
 
   // fabs(X) * fabs(Y) --> fabs(X * Y)
   // fabs(X) / fabs(Y) --> fabs(X / Y)
