@@ -69,12 +69,17 @@ define i1 @aligned_alloc_pointer_only_used_by_cmp_size_not_multiple_of_alignment
   ret i1 %cmp
 }
 
-; This test uses a aligned allocation function different to @aligned_alloc,
-; and should be treated as having @aligned_alloc's constraints on alignment
-; and size operands.
+; This test uses an aligned allocation function different to @aligned_alloc,
+; but declared with the "aligned" allockind. It must be treated as having
+; @aligned_alloc's constraints on the alignment and size operands: with
+; non-constant alignment and size, the allocation may legally return null
+; (e.g. if the alignment is not a power of 2), so the comparison must not be
+; folded to true.
 define i1 @other_aligned_allocation_function(i32 %size, i32 %alignment, i8 %value) {
 ; CHECK-LABEL: @other_aligned_allocation_function(
-; CHECK-NEXT:    ret i1 true
+; CHECK-NEXT:    [[ALIGNED_ALLOCATION:%.*]] = tail call ptr @other_aligned_alloc(i32 [[ALIGNMENT:%.*]], i32 [[SIZE:%.*]])
+; CHECK-NEXT:    [[CMP:%.*]] = icmp ne ptr [[ALIGNED_ALLOCATION]], null
+; CHECK-NEXT:    ret i1 [[CMP]]
 ;
   %aligned_allocation = tail call ptr @other_aligned_alloc(i32 %alignment, i32 %size)
   %cmp = icmp ne ptr %aligned_allocation, null
@@ -318,7 +323,7 @@ define void @test14(ptr %foo) nofree {
 ; TODO: free call marked no-free ->  %foo must be null
 define void @test15(ptr %foo) {
 ; CHECK-LABEL: @test15(
-; CHECK-NEXT:    call void @free(ptr [[FOO:%.*]]) #[[ATTR8:[0-9]+]]
+; CHECK-NEXT:    call void @free(ptr [[FOO:%.*]]) #[[ATTR7:[0-9]+]]
 ; CHECK-NEXT:    ret void
 ;
   call void @free(ptr %foo) nofree

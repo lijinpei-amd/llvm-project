@@ -3771,24 +3771,40 @@ isAllocSiteRemovable(Instruction *AI, SmallVectorImpl<Instruction *> &Users,
         if (!isNeverEqualToUnescapedAlloc(ICI->getOperand(OtherIndex), TLI, AI))
           return std::nullopt;
 
-        // Do not fold compares to aligned_alloc calls, as they may have to
-        // return null in case the required alignment cannot be satisfied,
-        // unless we can prove that both alignment and size are valid.
-        auto AlignmentAndSizeKnownValid = [](CallBase *CB) {
-          // Check if alignment and size of a call to aligned_alloc is valid,
-          // that is alignment is a power-of-2 and the size is a multiple of the
-          // alignment.
+        // Do not fold compares to aligned allocation functions (e.g.
+        // aligned_alloc, or any allocator declared with the "aligned"
+        // allockind), as they may have to return null when the required
+        // alignment cannot be satisfied (per the allocalign attribute, an
+        // aligned allocator must return either a suitably aligned pointer or
+        // null). We can only fold when we can prove that both the alignment
+        // and the size are valid.
+        auto IsAlignedAllocation = [](CallBase *CB) {
+          AllocFnKind Kind = CB->getAttributes().getAllocKind();
+          if (const Function *Callee = CB->getCalledFunction())
+            Kind |= Callee->getAttributes().getAllocKind();
+          return (Kind & AllocFnKind::Aligned) != AllocFnKind::Unknown;
+        };
+        auto AlignmentAndSizeKnownValid = [&TLI](CallBase *CB) {
+          // Check that the alignment and size of an aligned allocation are
+          // valid, that is the alignment is a power-of-2 constant and the
+          // size is a known multiple of the alignment.
+          const Value *AlignArg = getAllocAlignment(CB, &TLI);
+          // aligned_alloc passes its alignment in the first argument but is not
+          // modelled with an allocalign parameter, so fall back to it.
+          LibFunc TheLibFunc;
+          if (!AlignArg && CB->getCalledFunction() &&
+              TLI.getLibFunc(*CB->getCalledFunction(), TheLibFunc) &&
+              TLI.has(TheLibFunc) && TheLibFunc == LibFunc_aligned_alloc)
+            AlignArg = CB->getArgOperand(0);
           const APInt *Alignment;
-          const APInt *Size;
-          return match(CB->getArgOperand(0), m_APInt(Alignment)) &&
-                 match(CB->getArgOperand(1), m_APInt(Size)) &&
-                 Alignment->isPowerOf2() && Size->urem(*Alignment).isZero();
+          if (!AlignArg || !match(AlignArg, m_APInt(Alignment)) ||
+              !Alignment->isPowerOf2())
+            return false;
+          std::optional<APInt> Size = getAllocSize(CB, &TLI);
+          return Size && Size->urem(*Alignment).isZero();
         };
         auto *CB = dyn_cast<CallBase>(AI);
-        LibFunc TheLibFunc;
-        if (CB && TLI.getLibFunc(*CB->getCalledFunction(), TheLibFunc) &&
-            TLI.has(TheLibFunc) && TheLibFunc == LibFunc_aligned_alloc &&
-            !AlignmentAndSizeKnownValid(CB))
+        if (CB && IsAlignedAllocation(CB) && !AlignmentAndSizeKnownValid(CB))
           return std::nullopt;
         Users.emplace_back(I);
         continue;
