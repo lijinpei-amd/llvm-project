@@ -5301,16 +5301,38 @@ static Value *simplifyGEPInst(Type *SrcTy, Value *Ptr,
         if (match(Indices[0], m_AShr(m_Sub(m_PtrToIntOrAddr(m_Value(P)),
                                            m_PtrToIntOrAddr(m_Specific(Ptr))),
                                      m_ConstantInt(C))) &&
-            TyAllocSize == 1ULL << C && CanSimplify())
+            TyAllocSize == 1ULL << C && CanSimplify()) {
+          // ROOT-CAUSE INSTRUMENTATION (do not upstream): the fold below
+          // reconstructs the gep index as (P - V) >> C and folds the whole
+          // gep back to P. This is only valid when the ashr is `exact` (no
+          // low bits dropped). We print the shift amount, the exact flag, and
+          // announce that the fold fires unconditionally.
+          bool IsExact = cast<PossiblyExactOperator>(Indices[0])->isExact();
+          errs() << "[ROOTCAUSE gep-ashr-fold] C(shift)=" << C
+                 << " TyAllocSize=" << TyAllocSize << " (== 1<<C=" << (1ULL << C)
+                 << ") ashr-has-exact-flag=" << (IsExact ? "true" : "false")
+                 << " -> FOLDING gep(V, ashr(sub(P,V),C)) to P "
+                 << (IsExact ? "(sound)"
+                             : "(UNSOUND: low C bit(s) of (P-V) discarded)")
+                 << "\n";
           return P;
+        }
 
         // getelementptr V, (sdiv (sub P, V), C) -> P if P points to a type of
         // size C.
         if (match(Indices[0], m_SDiv(m_Sub(m_PtrToIntOrAddr(m_Value(P)),
                                            m_PtrToIntOrAddr(m_Specific(Ptr))),
                                      m_SpecificInt(TyAllocSize))) &&
-            CanSimplify())
+            CanSimplify()) {
+          // ROOT-CAUSE INSTRUMENTATION (do not upstream): analogous sdiv path.
+          bool IsExact = cast<PossiblyExactOperator>(Indices[0])->isExact();
+          errs() << "[ROOTCAUSE gep-sdiv-fold] C(divisor)=" << TyAllocSize
+                 << " sdiv-has-exact-flag=" << (IsExact ? "true" : "false")
+                 << " -> FOLDING gep(V, sdiv(sub(P,V),C)) to P "
+                 << (IsExact ? "(sound)" : "(UNSOUND: remainder of (P-V)/C discarded)")
+                 << "\n";
           return P;
+        }
       }
     }
   }
