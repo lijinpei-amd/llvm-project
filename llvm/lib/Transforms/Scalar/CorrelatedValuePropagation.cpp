@@ -192,9 +192,10 @@ static bool simplifyCommonValuePhi(PHINode *P, LazyValueInfo *LVI,
   }
 
   // LVI only guarantees that the value matches a certain constant if the value
-  // is not poison. Make sure we don't replace a well-defined value with poison.
-  // This is usually satisfied due to a prior branch on the value.
-  if (!isGuaranteedNotToBePoison(CommonValue, nullptr, P, DT))
+  // is not undef or poison. Make sure we don't replace a well-defined value
+  // with undef or poison. This is usually satisfied due to a prior branch on
+  // the value.
+  if (!isGuaranteedNotToBeUndefOrPoison(CommonValue, nullptr, P, DT))
     return false;
 
   // All constant incoming values map to the same variable along the incoming

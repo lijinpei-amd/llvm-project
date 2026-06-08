@@ -5,7 +5,7 @@
 
 define ptr @_ZN4mlir6Region15getParentOfTypeINS_19FunctionOpInterfaceEEET_v() {
 ; CHECK-LABEL: define ptr @_ZN4mlir6Region15getParentOfTypeINS_19FunctionOpInterfaceEEET_v() {
-; CHECK-NEXT:  [[ENTRY:.*:]]
+; CHECK-NEXT:  [[ENTRY:.*]]:
 ; CHECK-NEXT:    [[CALL_FCA_0_EXTRACT:%.*]] = extractvalue [2 x i64] zeroinitializer, 0
 ; CHECK-NEXT:    [[I2P:%.*]] = inttoptr i64 [[CALL_FCA_0_EXTRACT]] to ptr
 ; CHECK-NEXT:    [[CMP_I:%.*]] = icmp ne ptr [[I2P]], null
@@ -13,7 +13,8 @@ define ptr @_ZN4mlir6Region15getParentOfTypeINS_19FunctionOpInterfaceEEET_v() {
 ; CHECK:       [[DO_COND]]:
 ; CHECK-NEXT:    br label %[[CLEANUP]]
 ; CHECK:       [[CLEANUP]]:
-; CHECK-NEXT:    ret ptr [[I2P]]
+; CHECK-NEXT:    [[PHI:%.*]] = phi ptr [ [[I2P]], %[[ENTRY]] ], [ null, %[[DO_COND]] ]
+; CHECK-NEXT:    ret ptr [[PHI]]
 ;
 entry:
   %call.fca.0.extract = extractvalue [2 x i64] zeroinitializer, 0
