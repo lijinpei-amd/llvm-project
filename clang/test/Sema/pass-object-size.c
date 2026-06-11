@@ -66,3 +66,19 @@ void mismatch(void *p __attribute__((pass_dynamic_object_size(0)))); // expected
 
 void mismatch2(void *p __attribute__((pass_dynamic_object_size(0)))); // expected-note {{previous declaration is here}}
 void mismatch2(void *p __attribute__((pass_dynamic_object_size(1)))); // expected-error {{conflicting pass_object_size attributes on parameters}}
+
+// pass_object_size synthesizes an implicit argument at each call site, which is
+// only possible for a directly-declared function. It must be rejected on
+// function pointers, typedefs and function-typed parameters; otherwise codegen
+// crashes when such a value is called (GH200387).
+void on_fn_ptr_param(void (*fp)(void *PS(0))); // expected-error{{'pass_object_size' attribute can only be applied to a parameter of a function declaration; it is not allowed on a function pointer or typedef}}
+void (*on_fn_ptr_var)(void *PS(0));            // expected-error{{'pass_object_size' attribute can only be applied to a parameter of a function declaration; it is not allowed on a function pointer or typedef}}
+typedef void fn_typedef(void *PS(0));          // expected-error{{'pass_object_size' attribute can only be applied to a parameter of a function declaration; it is not allowed on a function pointer or typedef}}
+void on_fn_type_param(void g(void *PS(0)));    // expected-error{{'pass_object_size' attribute can only be applied to a parameter of a function declaration; it is not allowed on a function pointer or typedef}}
+void (*on_fn_ptr_array[3])(void *PS(0));       // expected-error{{'pass_object_size' attribute can only be applied to a parameter of a function declaration; it is not allowed on a function pointer or typedef}}
+void on_dyn_fn_ptr_param(void (*fp)(void *__attribute__((pass_dynamic_object_size(0))))); // expected-error{{'pass_dynamic_object_size' attribute can only be applied to a parameter of a function declaration; it is not allowed on a function pointer or typedef}}
+
+// Local (block-scope) function declarations are still fine.
+void local_decl_ok(void) {
+  void ok(void *p PS(0));
+}

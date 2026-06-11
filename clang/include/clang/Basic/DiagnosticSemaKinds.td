@@ -7915,6 +7915,9 @@ def err_invalid_form_pointer_member_function : Error<
 def err_address_of_function_with_pass_object_size_params: Error<
   "cannot take address of function %0 because parameter %1 has "
   "pass_object_size attribute">;
+def err_pass_object_size_attr_not_on_function_decl: Error<
+  "%0 attribute can only be applied to a parameter of a function declaration; "
+  "it is not allowed on a function pointer or typedef">;
 def err_parens_pointer_member_function : Error<
   "cannot parenthesize the name of a method when forming a member pointer">;
 def err_typecheck_invalid_lvalue_addrof_addrof_function : Error<

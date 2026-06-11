@@ -5354,8 +5354,35 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
           }
 
           if (Param->hasAttr<PassObjectSizeAttr>()) {
-            ExtParameterInfos[i] = ExtParameterInfos[i].withHasPassObjectSize();
-            HasAnyInterestingExtParameterInfos = true;
+            // pass_object_size synthesizes an implicit size_t argument at each
+            // call site by evaluating __builtin_object_size on the pointer
+            // argument. This is only possible when the callee is statically
+            // known, i.e. when the parameter belongs to a function (or lambda)
+            // that is directly declared -- not a function pointer, typedef, or
+            // function-typed parameter. Otherwise the function type would
+            // advertise an extra size_t parameter that no call site provides,
+            // crashing code generation. (This mirrors the existing rule that
+            // forbids taking the address of such a function.)
+            unsigned FunctionChunkIndex;
+            bool ContextDeclaresCallable =
+                D.isFunctionDeclarationContext() ||
+                D.getContext() == DeclaratorContext::LambdaExpr;
+            bool IsDirectFunctionDeclaration =
+                ContextDeclaresCallable &&
+                D.isFunctionDeclarator(FunctionChunkIndex) &&
+                FunctionChunkIndex == chunkIndex;
+            if (IsDirectFunctionDeclaration) {
+              ExtParameterInfos[i] =
+                  ExtParameterInfos[i].withHasPassObjectSize();
+              HasAnyInterestingExtParameterInfos = true;
+            } else {
+              S.Diag(Param->getLocation(),
+                     diag::err_pass_object_size_attr_not_on_function_decl)
+                  << Param->getAttr<PassObjectSizeAttr>();
+              // Drop the attribute so the parameter's declaration stays
+              // consistent with its (size-argument-free) type.
+              Param->dropAttr<PassObjectSizeAttr>();
+            }
           }
 
           if (Param->hasAttr<NoEscapeAttr>()) {
