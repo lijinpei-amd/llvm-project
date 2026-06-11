@@ -8850,14 +8850,11 @@ void ScalarEvolution::forgetValue(Value *V) {
 }
 
 void ScalarEvolution::forgetLcssaPhiWithNewPredecessor(Loop *L, PHINode *V) {
-  if (!isSCEVable(V->getType()))
-    return;
-
   // If SCEV looked through a trivial LCSSA phi node, we might have SCEV's
   // directly using a SCEVUnknown/SCEVAddRec defined in the loop. After an
   // extra predecessor is added, this is no longer valid. Find all Unknowns and
   // AddRecs defined in the loop and invalidate any SCEV's making use of them.
-  if (const SCEV *S = getExistingSCEV(V)) {
+  auto InvalidateUsingLoopDefs = [&](const SCEV *S) {
     struct InvalidationRootCollector {
       Loop *L;
       SmallVector<SCEVUse, 8> Roots;
@@ -8881,6 +8878,20 @@ void ScalarEvolution::forgetLcssaPhiWithNewPredecessor(Loop *L, PHINode *V) {
     InvalidationRootCollector C(L);
     visitAll(S, C);
     forgetMemoizedResults(C.Roots);
+  };
+
+  if (isSCEVable(V->getType())) {
+    if (const SCEV *S = getExistingSCEV(V))
+      InvalidateUsingLoopDefs(S);
+  } else {
+    // SCEV cannot represent the phi directly (e.g. it has an aggregate type
+    // produced by a with.overflow intrinsic), but it may have looked through
+    // the trivial LCSSA phi via extractvalue users. Invalidate based on their
+    // SCEVs instead.
+    for (User *U : V->users())
+      if (isa<ExtractValueInst>(U) && isSCEVable(U->getType()))
+        if (const SCEV *S = getExistingSCEV(cast<Instruction>(U)))
+          InvalidateUsingLoopDefs(S);
   }
 
   // Also perform the normal invalidation.
