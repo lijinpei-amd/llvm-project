@@ -854,7 +854,30 @@ void elf::initSymbolAnchors(Ctx &ctx) {
   // `d->scriptDefined` to include such symbols.
   //
   // `relaxAux->anchors` may contain duplicate symbols, but that is fine.
-  auto addAnchor = [](Defined *d) {
+  //
+  // Symbols defined by linker script symbol assignments (--defsym and SECTIONS
+  // `sym = expr`) are also `scriptDefined`, but their values are recomputed by
+  // assignSymbol() on every relaxation pass. Anchoring them would additionally
+  // subtract relaxation deltas, double-counting the shrinkage and causing false
+  // non-convergence (e.g. `--defsym=foo=_start+8`). Collect such symbols so we
+  // can skip them. (Unlike --wrap symbols, which are real object-file
+  // definitions and must be anchored.)
+  DenseSet<const Symbol *> scriptAssigned;
+  auto collectAssign = [&](SectionCommand *cmd) {
+    if (auto *assign = dyn_cast<SymbolAssignment>(cmd))
+      if (assign->sym)
+        scriptAssigned.insert(assign->sym);
+  };
+  for (SectionCommand *cmd : ctx.script->sectionCommands) {
+    collectAssign(cmd);
+    if (auto *osd = dyn_cast<OutputDesc>(cmd))
+      for (SectionCommand *subCmd : osd->osec.commands)
+        collectAssign(subCmd);
+  }
+
+  auto addAnchor = [&](Defined *d) {
+    if (scriptAssigned.contains(d))
+      return;
     if (auto *sec = dyn_cast_or_null<InputSection>(d->section))
       if (sec->flags & SHF_EXECINSTR && sec->relaxAux) {
         // If sec is discarded, relaxAux will be nullptr.
