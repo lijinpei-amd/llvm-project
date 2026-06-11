@@ -45,6 +45,7 @@ class Loop;
 class ScalarEvolution;
 class SCEV;
 class SCEVAddRecExpr;
+class Value;
 
 typedef SmallPtrSet<const Loop *, 2> PostIncLoopSet;
 
@@ -60,9 +61,18 @@ LLVM_ABI const SCEV *normalizeForPostIncUse(const SCEV *S,
 
 /// Normalize \p S for all add recurrence sub-expressions for which \p
 /// Pred returns true.
-LLVM_ABI const SCEV *normalizeForPostIncUseIf(const SCEV *S,
-                                              NormalizePredTy Pred,
-                                              ScalarEvolution &SE);
+///
+/// If \p NewStartPoison is non-null, it is populated with the maybe-poison
+/// values that normalization newly exposes in the start (loop-invariant base)
+/// of an add recurrence. Such values become a new poison dependency of the
+/// loop-invariant remainder when the result is denormalized and expanded for a
+/// post-increment user, even though normalization is structurally invertible.
+/// Callers that have the original IR value can use this to detect and reject
+/// rewrites that would introduce a new use of poison (see PR174200).
+LLVM_ABI const SCEV *
+normalizeForPostIncUseIf(const SCEV *S, NormalizePredTy Pred,
+                         ScalarEvolution &SE,
+                         SmallPtrSetImpl<const Value *> *NewStartPoison = nullptr);
 
 /// Denormalize \p S to be post-increment for all loops present in \p
 /// Loops.

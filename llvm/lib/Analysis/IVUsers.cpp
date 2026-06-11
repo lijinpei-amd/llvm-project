@@ -216,7 +216,8 @@ bool IVUsers::AddUsersIfInteresting(Instruction *I) {
         return Result;
       };
 
-      ISE = normalizeForPostIncUseIf(ISE, NormalizePred, *SE);
+      SmallPtrSet<const Value *, 4> NewStartPoison;
+      ISE = normalizeForPostIncUseIf(ISE, NormalizePred, *SE, &NewStartPoison);
 
       // PostIncNormalization effectively simplifies the expression under
       // pre-increment assumptions. Those assumptions (no wrapping) might not
@@ -231,6 +232,22 @@ bool IVUsers::AddUsersIfInteresting(Instruction *I) {
         if (OriginalISE != DenormalizedISE) {
           LLVM_DEBUG(dbgs()
                      << "   DISCARDING (NORMALIZATION ISN'T INVERTIBLE): "
+                     << *ISE << '\n');
+          IVUses.pop_back();
+          return false;
+        }
+
+        // Normalizing a post-increment use rewrites it as E_pre = E_post -
+        // stride, which is structurally invertible but introduces a new use of
+        // the stride in the loop-invariant base of the expression. If such a
+        // newly-exposed value may be poison while the original value could not
+        // (e.g. the live-out value of an add-recurrence whose start is a
+        // non-poison constant), the rewrite creates a new poison dependency and
+        // would be a miscompile. Discard such users. See PR174200.
+        if (any_of(NewStartPoison,
+                   [&](const Value *V) { return !impliesPoison(V, I); })) {
+          LLVM_DEBUG(dbgs()
+                     << "   DISCARDING (NORMALIZATION ADDS NEW POISON USE): "
                      << *ISE << '\n');
           IVUses.pop_back();
           return false;

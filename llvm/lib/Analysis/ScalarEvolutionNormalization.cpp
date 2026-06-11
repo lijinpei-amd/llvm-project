@@ -12,9 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/ScalarEvolutionNormalization.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/IR/Value.h"
 using namespace llvm;
 
 /// TransformKind - Different types of transformations that
@@ -36,10 +38,15 @@ struct NormalizeDenormalizeRewriter
   // we're careful about the lifetime of NormalizeDenormalizeRewriter.
   const NormalizePredTy Pred;
 
-  NormalizeDenormalizeRewriter(TransformKind Kind, NormalizePredTy Pred,
-                               ScalarEvolution &SE)
+  // Optional collector for maybe-poison values that normalization newly exposes
+  // in the start (loop-invariant base) of an add recurrence. See PR174200.
+  SmallPtrSetImpl<const Value *> *NewStartPoison;
+
+  NormalizeDenormalizeRewriter(
+      TransformKind Kind, NormalizePredTy Pred, ScalarEvolution &SE,
+      SmallPtrSetImpl<const Value *> *NewStartPoison = nullptr)
       : SCEVRewriteVisitor<NormalizeDenormalizeRewriter>(SE), Kind(Kind),
-        Pred(Pred) {}
+        Pred(Pred), NewStartPoison(NewStartPoison) {}
   const SCEV *visitAddRecExpr(const SCEVAddRecExpr *Expr);
 };
 } // namespace
@@ -87,8 +94,25 @@ NormalizeDenormalizeRewriter::visitAddRecExpr(const SCEVAddRecExpr *AR) {
     //   normalization by induction.  We subtract the normalized step
     //   recurrence from S_{N-1} to get the normalization of S.
 
+    // The start operand (S_{N-1}) is the loop-invariant base that is exposed
+    // when this normalized expression is later denormalized and expanded for a
+    // post-increment user. Record any maybe-poison value that subtracting the
+    // step introduces into the start but that was not exposed there before, so
+    // the caller can reject rewrites that would create a new use of poison.
+    SmallPtrSet<const Value *, 4> StartPoisonBefore;
+    if (NewStartPoison)
+      SE.getPoisonGeneratingValues(StartPoisonBefore, Operands[0].getPointer());
+
     for (int i = Operands.size() - 2; i >= 0; i--)
       Operands[i] = SE.getMinusSCEV(Operands[i], Operands[i + 1]);
+
+    if (NewStartPoison) {
+      SmallPtrSet<const Value *, 4> StartPoisonAfter;
+      SE.getPoisonGeneratingValues(StartPoisonAfter, Operands[0].getPointer());
+      for (const Value *V : StartPoisonAfter)
+        if (!StartPoisonBefore.contains(V))
+          NewStartPoison->insert(V);
+    }
   }
 
   return SE.getAddRecExpr(Operands, AR->getLoop(), SCEV::FlagAnyWrap);
@@ -112,9 +136,12 @@ const SCEV *llvm::normalizeForPostIncUse(const SCEV *S,
   return Normalized;
 }
 
-const SCEV *llvm::normalizeForPostIncUseIf(const SCEV *S, NormalizePredTy Pred,
-                                           ScalarEvolution &SE) {
-  return NormalizeDenormalizeRewriter(Normalize, Pred, SE).visit(S);
+const SCEV *
+llvm::normalizeForPostIncUseIf(const SCEV *S, NormalizePredTy Pred,
+                               ScalarEvolution &SE,
+                               SmallPtrSetImpl<const Value *> *NewStartPoison) {
+  return NormalizeDenormalizeRewriter(Normalize, Pred, SE, NewStartPoison)
+      .visit(S);
 }
 
 const SCEV *llvm::denormalizeForPostIncUse(const SCEV *S,

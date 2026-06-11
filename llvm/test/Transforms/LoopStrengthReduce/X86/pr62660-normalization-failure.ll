@@ -45,44 +45,44 @@ define void @pr63840_crash(i64 %sext974, i64 %sext982, i8 %x) {
 ; CHECK-SAME: (i64 [[SEXT974:%.*]], i64 [[SEXT982:%.*]], i8 [[X:%.*]]) {
 ; CHECK-NEXT:  bb:
 ; CHECK-NEXT:    [[TMP0:%.*]] = sext i8 [[X]] to i64
-; CHECK-NEXT:    [[TMP1:%.*]] = shl nsw i64 [[TMP0]], 1
+; CHECK-NEXT:    [[TMP1:%.*]] = shl i64 [[TMP0]], 1
 ; CHECK-NEXT:    [[TMP2:%.*]] = add i64 [[SEXT982]], [[SEXT974]]
 ; CHECK-NEXT:    [[TMP3:%.*]] = sub i64 [[TMP1]], [[TMP2]]
-; CHECK-NEXT:    [[TMP4:%.*]] = sub i64 [[TMP0]], [[SEXT974]]
+; CHECK-NEXT:    [[TMP4:%.*]] = sub i64 [[TMP1]], [[SEXT974]]
 ; CHECK-NEXT:    br label [[BB983:%.*]]
 ; CHECK:       bb983:
-; CHECK-NEXT:    [[LSR_IV7:%.*]] = phi i64 [ [[LSR_IV_NEXT8:%.*]], [[BB983]] ], [ [[TMP4]], [[BB:%.*]] ]
+; CHECK-NEXT:    [[LSR_IV11:%.*]] = phi i64 [ [[LSR_IV_NEXT12:%.*]], [[BB983]] ], [ [[TMP4]], [[BB:%.*]] ]
 ; CHECK-NEXT:    [[LSR_IV1:%.*]] = phi i64 [ [[LSR_IV_NEXT2:%.*]], [[BB983]] ], [ [[TMP3]], [[BB]] ]
 ; CHECK-NEXT:    [[LSR_IV_NEXT2]] = sub i64 [[LSR_IV1]], [[SEXT982]]
-; CHECK-NEXT:    [[LSR_IV_NEXT8]] = sub i64 [[LSR_IV7]], [[SEXT982]]
+; CHECK-NEXT:    [[LSR_IV_NEXT12]] = sub i64 [[LSR_IV11]], [[SEXT982]]
 ; CHECK-NEXT:    br i1 false, label [[BB992:%.*]], label [[BB983]]
 ; CHECK:       bb992:
-; CHECK-NEXT:    [[LSR_IV_NEXT8_LCSSA:%.*]] = phi i64 [ [[LSR_IV_NEXT8]], [[BB983]] ]
+; CHECK-NEXT:    [[LSR_IV_NEXT12_LCSSA:%.*]] = phi i64 [ [[LSR_IV_NEXT12]], [[BB983]] ]
 ; CHECK-NEXT:    [[SEXT1046:%.*]] = sext i8 [[X]] to i64
 ; CHECK-NEXT:    br label [[BB1092:%.*]]
 ; CHECK:       bb1051:
 ; CHECK-NEXT:    ret void
 ; CHECK:       bb1053:
-; CHECK-NEXT:    [[ADD1054:%.*]] = add i64 [[PHI1094:%.*]], [[SEXT1046]]
 ; CHECK-NEXT:    br i1 false, label [[BB1059:%.*]], label [[BB1064SPLIT:%.*]]
 ; CHECK:       bb1059:
-; CHECK-NEXT:    [[ADD1061:%.*]] = add i64 [[ADD1054]], [[SEXT1046]]
+; CHECK-NEXT:    [[ADD1061:%.*]] = add i64 [[LSR_IV7:%.*]], [[SEXT1046]]
 ; CHECK-NEXT:    store i64 [[ADD1061]], ptr addrspace(1) null, align 8
 ; CHECK-NEXT:    br i1 false, label [[BB1059_BB1064_CRIT_EDGE:%.*]], label [[BB1092]]
 ; CHECK:       bb1064split:
 ; CHECK-NEXT:    br label [[BB1064:%.*]]
 ; CHECK:       bb1059.bb1064_crit_edge:
-; CHECK-NEXT:    [[LSR_IV_NEXT4_LCSSA6:%.*]] = phi i64 [ [[LSR_IV_NEXT4:%.*]], [[BB1059]] ]
+; CHECK-NEXT:    [[LSR_IV_NEXT4_LCSSA10:%.*]] = phi i64 [ [[LSR_IV_NEXT4:%.*]], [[BB1059]] ]
 ; CHECK-NEXT:    br label [[BB1064]]
 ; CHECK:       bb1064:
-; CHECK-NEXT:    [[PHI1065:%.*]] = phi i64 [ [[LSR_IV_NEXT4_LCSSA6]], [[BB1059_BB1064_CRIT_EDGE]] ], [ 0, [[BB1064SPLIT]] ]
+; CHECK-NEXT:    [[PHI1065:%.*]] = phi i64 [ [[LSR_IV_NEXT4_LCSSA10]], [[BB1059_BB1064_CRIT_EDGE]] ], [ 0, [[BB1064SPLIT]] ]
 ; CHECK-NEXT:    ret void
 ; CHECK:       bb1092:
+; CHECK-NEXT:    [[LSR_IV7]] = phi i64 [ [[LSR_IV_NEXT8:%.*]], [[BB1059]] ], [ [[LSR_IV_NEXT12_LCSSA]], [[BB992]] ]
 ; CHECK-NEXT:    [[LSR_IV3:%.*]] = phi i64 [ [[LSR_IV_NEXT4]], [[BB1059]] ], [ [[LSR_IV1]], [[BB992]] ]
 ; CHECK-NEXT:    [[LSR_IV:%.*]] = phi i64 [ [[LSR_IV_NEXT:%.*]], [[BB1059]] ], [ -1, [[BB992]] ]
-; CHECK-NEXT:    [[PHI1094]] = phi i64 [ [[LSR_IV_NEXT8_LCSSA]], [[BB992]] ], [ [[ADD1054]], [[BB1059]] ]
 ; CHECK-NEXT:    [[LSR_IV_NEXT]] = add nsw i64 [[LSR_IV]], 1
 ; CHECK-NEXT:    [[LSR_IV_NEXT4]] = add i64 [[LSR_IV3]], [[SEXT1046]]
+; CHECK-NEXT:    [[LSR_IV_NEXT8]] = add i64 [[LSR_IV7]], [[SEXT1046]]
 ; CHECK-NEXT:    [[ICMP1050:%.*]] = icmp ult i64 [[LSR_IV_NEXT]], 0
 ; CHECK-NEXT:    br i1 [[ICMP1050]], label [[BB1053:%.*]], label [[BB1051:%.*]]
 ;
