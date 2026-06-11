@@ -205,3 +205,61 @@ TEST(EvaluateAsRValue, FailsGracefullyOnBoundMemberExpr) {
         Args));
   }
 }
+
+// Mirrors what clangd does when computing hover information: skip
+// value-dependent expressions and then try to constant-evaluate the rest. An
+// error-recovery DeclRefExpr can be `contains-errors` (and hence is not
+// constant-foldable) without being value-dependent, so the evaluator must not
+// assume that a value-dependent variable initializer implies the variable is
+// unusable in constant expressions.
+class EvaluateNonDependentExprVisitor
+    : public clang::DynamicRecursiveASTVisitor {
+public:
+  explicit EvaluateNonDependentExprVisitor(clang::ASTContext &Ctx) : Ctx(Ctx) {}
+
+  bool VisitDeclRefExpr(clang::DeclRefExpr *E) override {
+    if (E->isValueDependent())
+      return true;
+    clang::Expr::EvalResult Result;
+    // Should not crash regardless of whether evaluation succeeds.
+    E->EvaluateAsRValue(Result, Ctx);
+    return true;
+  }
+
+private:
+  clang::ASTContext &Ctx;
+};
+
+class EvaluateNonDependentExprAction : public clang::ASTFrontendAction {
+public:
+  std::unique_ptr<clang::ASTConsumer>
+  CreateASTConsumer(clang::CompilerInstance &Compiler,
+                    llvm::StringRef FilePath) override {
+    return std::make_unique<Consumer>();
+  }
+
+private:
+  class Consumer : public clang::ASTConsumer {
+  public:
+    ~Consumer() override {}
+    void HandleTranslationUnit(clang::ASTContext &Ctx) override {
+      EvaluateNonDependentExprVisitor Evaluator(Ctx);
+      Evaluator.TraverseDecl(Ctx.getTranslationUnitDecl());
+    }
+  };
+};
+
+TEST(EvaluateAsRValue, FailsGracefullyOnErrorRecoveryReference) {
+  // The initializer of `x` is an error-recovery expression, which makes the
+  // initializer value-dependent. References to `x`, however, are only
+  // `contains-errors` and not value-dependent. Evaluating such a reference used
+  // to hit an assertion in LValueExprEvaluator::VisitVarDecl.
+  std::vector<std::string> Args(1, "-std=c++23");
+  runToolOnCodeWithArgs(std::make_unique<EvaluateNonDependentExprAction>(),
+                        "struct A { virtual int foo(); };\n"
+                        "void foo() {\n"
+                        "  A &x = *x;\n"
+                        "  (void)&x;\n"
+                        "}\n",
+                        Args);
+}

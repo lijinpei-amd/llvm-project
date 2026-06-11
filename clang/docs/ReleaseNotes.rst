@@ -750,6 +750,9 @@ Miscellaneous Clang Crashes Fixed
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 - Fixed a crash when attempting to jump over initialization of a variable with variably modified type. (#GH175540)
+- Fixed an assertion failure in the constant expression evaluator when folding a
+  reference to a variable whose initializer was replaced by an error-recovery
+  expression (e.g. as triggered by clangd hover). (#GH201365)
 - Fixed a crash when using loop hint with a value dependent argument inside a
   generic lambda. (#GH172289)
 - Fixed a crash in C++ overload resolution with ``_Atomic``-qualified argument types. (#GH170433)

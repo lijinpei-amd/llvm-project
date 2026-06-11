@@ -3451,7 +3451,15 @@ static bool evaluateVarDeclInit(EvalInfo &Info, const Expr *E,
     // constant-folding cases, where the variable is not actually of a suitable
     // type for use in a constant expression (otherwise the DeclRefExpr would
     // have been value-dependent too), so diagnose that.
-    assert(!VD->mightBeUsableInConstantExpressions(Info.Ctx));
+    //
+    // The one exception is error recovery: an initializer can be made
+    // value-dependent because it contains errors (e.g. a RecoveryExpr), in
+    // which case a reference to the variable need not be value-dependent even
+    // though the variable would otherwise be usable in a constant expression.
+    assert((Init->containsErrors() ||
+            !VD->mightBeUsableInConstantExpressions(Info.Ctx)) &&
+           "expected a non-constant initializer for a variable that is usable "
+           "in constant expressions");
     if (!Info.checkingPotentialConstantExpression()) {
       Info.FFDiag(E, Info.getLangOpts().CPlusPlus11
                          ? diag::note_constexpr_ltor_non_constexpr
