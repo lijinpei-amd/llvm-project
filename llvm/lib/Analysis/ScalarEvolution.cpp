@@ -14705,6 +14705,22 @@ void ScalarEvolution::getReachableBlocks(
           continue;
         }
       }
+
+      // Fall back to simplifying the branch condition to a constant. This
+      // catches conditions that are not literal ConstantInts but still fold
+      // away (e.g. `and i1 false, false`). Such conditions are recognized as
+      // unreachable guards by SCEV's deeper reasoning (e.g.
+      // isBasicBlockEntryGuardedByCond), so getReachableBlocks must agree to
+      // avoid verifying backedge-taken counts of dead loops.
+      if (auto *CondI = dyn_cast<Instruction>(Cond)) {
+        if (Value *Simplified =
+                simplifyInstruction(CondI, SimplifyQuery(getDataLayout()))) {
+          if (auto *C = dyn_cast<ConstantInt>(Simplified)) {
+            Worklist.push_back(C->isOne() ? TrueBB : FalseBB);
+            continue;
+          }
+        }
+      }
     }
 
     append_range(Worklist, successors(BB));
