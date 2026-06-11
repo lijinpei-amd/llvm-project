@@ -476,8 +476,12 @@ bool RISCVVectorPeephole::ensureDominates(ArrayRef<const MachineOperand *> Defs,
       continue;
 
     MachineInstr *Def = MRI->getVRegDef(MO->getReg());
-    if (Def->getParent() == Dest->getParent() && !dominates(Def, *Dest)) {
-      if (!RISCVInstrInfo::isSafeToMove(*Dest, *Def->getNextNode()))
+    // If Def is at or after the current insertion point, Use needs to be sunk
+    // past it. Note we compare against Dest (which only moves forwards) rather
+    // than !dominates(Def, *Dest): when Dest has already been advanced to Def
+    // itself, dominates(Def, Def) is true and Use would be left in front of Def.
+    if (Def->getParent() == Dest->getParent() && dominates(*Dest, *Def)) {
+      if (!RISCVInstrInfo::isSafeToMove(Use, *Def->getNextNode()))
         return false;
       Dest = Def->getNextNode();
     }
