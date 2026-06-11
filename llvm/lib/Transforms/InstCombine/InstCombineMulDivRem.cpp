@@ -616,8 +616,15 @@ Instruction *InstCombinerImpl::foldFPSignBitOps(BinaryOperator &I) {
 
   // fabs(X) * fabs(X) -> X * X
   // fabs(X) / fabs(X) -> X / X
-  if (Op0 == Op1 && match(Op0, m_FAbs(m_Value(X))))
+  if (Op0 == Op1 && match(Op0, m_FAbs(m_Value(X)))) {
+    // This reuses X twice, so it would increase the number of uses of a
+    // potentially-undef value (each use of undef may take a different value).
+    // Freeze X first unless it is already guaranteed to be a single value, so
+    // that both operands of the new fmul/fdiv observe the same value.
+    if (!isGuaranteedNotToBeUndef(X))
+      X = Builder.CreateFreeze(X, X->getName() + ".fr");
     return BinaryOperator::CreateWithCopiedFlags(Opcode, X, X, &I);
+  }
 
   // fabs(X) * fabs(Y) --> fabs(X * Y)
   // fabs(X) / fabs(Y) --> fabs(X / Y)
