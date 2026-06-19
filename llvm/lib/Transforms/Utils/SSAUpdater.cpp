@@ -372,6 +372,13 @@ LoadAndStorePromoter(ArrayRef<const Instruction *> Insts,
   SSA.Initialize(SomeVal->getType(), BaseName);
 }
 
+static Value *getLoadReplacementValue(LoadInst *LI, Value *Replacement) {
+  // If the replacement value is the load, this must occur in unreachable code.
+  if (Replacement == LI)
+    return PoisonValue::get(LI->getType());
+  return Replacement;
+}
+
 void LoadAndStorePromoter::run(const SmallVectorImpl<Instruction *> &Insts) {
   // First step: bucket up uses of the alloca by the block they occur in.
   // This is important because we have to handle multiple defs/uses in a block
@@ -446,6 +453,7 @@ void LoadAndStorePromoter::run(const SmallVectorImpl<Instruction *> &Insts) {
         // If we haven't seen a store yet, this is a live in use, otherwise
         // use the stored value.
         if (StoredValue) {
+          StoredValue = getLoadReplacementValue(L, StoredValue);
           replaceLoadWithValue(L, StoredValue);
           L->replaceAllUsesWith(StoredValue);
           ReplacedLoads[L] = StoredValue;
@@ -477,10 +485,8 @@ void LoadAndStorePromoter::run(const SmallVectorImpl<Instruction *> &Insts) {
   // inserting PHI nodes as necessary.
   for (LoadInst *ALoad : LiveInLoads) {
     Value *NewVal = SSA.GetValueInMiddleOfBlock(ALoad->getParent());
+    NewVal = getLoadReplacementValue(ALoad, NewVal);
     replaceLoadWithValue(ALoad, NewVal);
-
-    // Avoid assertions in unreachable code.
-    if (NewVal == ALoad) NewVal = PoisonValue::get(NewVal->getType());
     ALoad->replaceAllUsesWith(NewVal);
     ReplacedLoads[ALoad] = NewVal;
   }
