@@ -446,6 +446,12 @@ void LoadAndStorePromoter::run(const SmallVectorImpl<Instruction *> &Insts) {
         // If we haven't seen a store yet, this is a live in use, otherwise
         // use the stored value.
         if (StoredValue) {
+          // Avoid assertions in unreachable code: a store may forward its
+          // value to a load that defines that very value (a self-referential
+          // store/load cycle), in which case replacing the load with the
+          // stored value would be a self-RAUW.
+          if (StoredValue == L)
+            StoredValue = PoisonValue::get(L->getType());
           replaceLoadWithValue(L, StoredValue);
           L->replaceAllUsesWith(StoredValue);
           ReplacedLoads[L] = StoredValue;

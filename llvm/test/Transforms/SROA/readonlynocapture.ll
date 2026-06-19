@@ -584,3 +584,39 @@ exit:
 }
 
 declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
+
+; Self-referential store/load cycle in unreachable code combined with a
+; dynamic-offset (escaped read-only) load. The load-only promotion must not
+; assert/hang trying to replace the load with itself (issue #204799).
+define fastcc i32 @self_referential_load_in_unreachable(i64 %idx) {
+; CHECK-LABEL: @self_referential_load_in_unreachable(
+; CHECK-NEXT:  entry:
+; CHECK-NEXT:    [[A:%.*]] = alloca [2 x i32], align 4
+; CHECK-NEXT:    br label [[LOOP:%.*]]
+; CHECK:       loop:
+; CHECK-NEXT:    br label [[LOOP]]
+; CHECK:       unreachable_cycle:
+; CHECK-NEXT:    store i32 poison, ptr [[A]], align 4
+; CHECK-NEXT:    br label [[UNREACHABLE_CYCLE:%.*]]
+; CHECK:       dyn:
+; CHECK-NEXT:    [[GEP:%.*]] = getelementptr [4 x i8], ptr [[A]], i64 [[IDX:%.*]]
+; CHECK-NEXT:    [[DYNLD:%.*]] = load i32, ptr [[GEP]], align 4
+; CHECK-NEXT:    br label [[DYN:%.*]]
+;
+entry:
+  %a = alloca [2 x i32], align 4
+  br label %loop
+
+loop:
+  br label %loop
+
+unreachable_cycle:
+  store i32 %ld, ptr %a, align 4
+  %ld = load i32, ptr %a, align 4
+  br label %unreachable_cycle
+
+dyn:
+  %gep = getelementptr [4 x i8], ptr %a, i64 %idx
+  %dynld = load i32, ptr %gep, align 4
+  br label %dyn
+}
