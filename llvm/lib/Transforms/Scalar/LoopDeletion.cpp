@@ -24,6 +24,7 @@
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/IntrinsicInst.h"
 
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Transforms/Scalar/LoopPassManager.h"
@@ -54,6 +55,23 @@ static LoopDeletionResult merge(LoopDeletionResult A, LoopDeletionResult B) {
   if (A == LoopDeletionResult::Modified || B == LoopDeletionResult::Modified)
     return LoopDeletionResult::Modified;
   return LoopDeletionResult::Unmodified;
+}
+
+// LCSSA cannot form PHIs for token values, and replacing a convergencectrl
+// operand with poison would produce invalid IR.
+static bool hasConvergenceTokenUsedOutsideLoop(Loop *L) {
+  for (BasicBlock *BB : L->blocks()) {
+    for (Instruction &I : *BB) {
+      if (!isa<ConvergenceControlInst>(I))
+        continue;
+      if (any_of(I.users(), [L](User *U) {
+            auto *UserI = dyn_cast<Instruction>(U);
+            return !UserI || !L->contains(UserI->getParent());
+          }))
+        return true;
+    }
+  }
+  return false;
 }
 
 /// Determines if a loop is dead.
@@ -456,6 +474,12 @@ static LoopDeletionResult deleteLoopIfDead(Loop *L, DominatorTree &DT,
   // case.
   if (ExitBlock && ExitBlock->isEHPad()) {
     LLVM_DEBUG(dbgs() << "Cannot delete loop exiting to EH pad.\n");
+    return LoopDeletionResult::Unmodified;
+  }
+
+  if (hasConvergenceTokenUsedOutsideLoop(L)) {
+    LLVM_DEBUG(
+        dbgs() << "Cannot delete loop with convergence token live-out.\n");
     return LoopDeletionResult::Unmodified;
   }
 
