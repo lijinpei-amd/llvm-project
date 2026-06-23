@@ -5282,7 +5282,8 @@ struct AAAlignImpl : AAAlign {
       takeKnownMaximum(Attr.getValueAsInt());
 
     Value &V = *getAssociatedValue().stripPointerCasts();
-    takeKnownMaximum(V.getPointerAlignment(A.getDataLayout()).value());
+    if (V.getType()->isPointerTy())
+      takeKnownMaximum(V.getPointerAlignment(A.getDataLayout()).value());
 
     if (Instruction *CtxI = getCtxI())
       followUsesInMBEC(*this, A, getState(), *CtxI);
