@@ -502,14 +502,6 @@ bool SIFoldOperandsImpl::tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseO
   int OpNo = MI->getOperandNo(&Old);
   uint8_t OpType = TII->get(Opcode).operands()[OpNo].OperandType;
 
-  // If the literal can be inlined as-is, apply it and short-circuit the
-  // tests below. The main motivation for this is to avoid unintuitive
-  // uses of opsel.
-  if (AMDGPU::isInlinableLiteralV216(ImmVal, OpType)) {
-    Old.ChangeToImmediate(ImmVal);
-    return true;
-  }
-
   // Refer to op_sel/op_sel_hi and check if we can change the immediate and
   // op_sel in a way that allows an inline constant.
   AMDGPU::OpName ModName = AMDGPU::OpName::NUM_OPERAND_NAMES;
@@ -529,12 +521,62 @@ bool SIFoldOperandsImpl::tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseO
   MachineOperand &Mod = MI->getOperand(ModIdx);
   unsigned ModVal = Mod.getImm();
 
+  // Value each result lane should read, undoing the current op_sel/op_sel_hi.
   uint16_t ImmLo =
       static_cast<uint16_t>(ImmVal >> (ModVal & SISrcMods::OP_SEL_0 ? 16 : 0));
   uint16_t ImmHi =
       static_cast<uint16_t>(ImmVal >> (ModVal & SISrcMods::OP_SEL_1 ? 16 : 0));
   uint32_t Imm = (static_cast<uint32_t>(ImmHi) << 16) | ImmLo;
   unsigned NewModVal = ModVal & ~(SISrcMods::OP_SEL_0 | SISrcMods::OP_SEL_1);
+
+  // Packed BF16 floating-point inline constants use the F32 inline-constant
+  // encoding, so the BF16 datum is delivered in the *high* 16 bits of the
+  // source (the low 16 bits are zero) -- the opposite of the F16 convention.
+  // A result lane therefore reads the constant value when its op_sel bit is 1
+  // and reads +0.0 when its op_sel bit is 0. Handle such constants explicitly;
+  // the generic logic below assumes the F16 low-half convention and would
+  // misplace the halves for BF16. Integer inline constants are sign-extended
+  // into both halves and are left to the generic path.
+  if (OpType == AMDGPU::OPERAND_REG_IMM_V2BF16 ||
+      OpType == AMDGPU::OPERAND_REG_INLINE_C_V2BF16) {
+    auto IsBF16FPInline = [](uint16_t V) {
+      return AMDGPU::isInlinableLiteralV2BF16(V) &&
+             !AMDGPU::isInlinableIntLiteral(static_cast<int16_t>(V));
+    };
+    bool LoFP = IsBF16FPInline(ImmLo);
+    bool HiFP = IsBF16FPInline(ImmHi);
+    if (LoFP || HiFP) {
+      // Foldable to a single inline constant only if every lane is either
+      // +0.0 or the same floating-point value C. A lane holding C reads the
+      // high half (op_sel = 1); a +0.0 lane reads the (zero) low half.
+      uint16_t C = LoFP ? ImmLo : ImmHi;
+      bool LoOk = LoFP ? (ImmLo == C) : (ImmLo == 0);
+      bool HiOk = HiFP ? (ImmHi == C) : (ImmHi == 0);
+      if (LoOk && HiOk) {
+        unsigned NewMod = NewModVal;
+        if (ImmLo == C)
+          NewMod |= SISrcMods::OP_SEL_0;
+        if (ImmHi == C)
+          NewMod |= SISrcMods::OP_SEL_1;
+        Mod.setImm(NewMod);
+        Old.ChangeToImmediate(C);
+        return true;
+      }
+      // Mixed distinct values (or a value paired with a non-zero, non-inline
+      // half): cannot be a single BF16 inline constant. Let the caller fall
+      // back to a 32-bit literal.
+      return false;
+    }
+    // No floating-point lane: fall through to the generic integer handling.
+  }
+
+  // If the literal can be inlined as-is, apply it and short-circuit the
+  // tests below. The main motivation for this is to avoid unintuitive
+  // uses of opsel.
+  if (AMDGPU::isInlinableLiteralV216(ImmVal, OpType)) {
+    Old.ChangeToImmediate(ImmVal);
+    return true;
+  }
 
   // Helper function that attempts to inline the given value with a newly
   // chosen opsel pattern.
