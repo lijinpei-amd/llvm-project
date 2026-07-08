@@ -89,6 +89,34 @@ define amdgpu_ps void @v_test_add_v2bf16_vc(ptr addrspace(1) %out, <2 x bfloat> 
   ret void
 }
 
+; Non-splat inline constant <C, 0.0>: C must be read into the low result lane
+; only (op_sel:[0,1] op_sel_hi:[1,0]), not both lanes.
+define amdgpu_ps void @v_test_add_v2bf16_vc_lo(ptr addrspace(1) %out, <2 x bfloat> %a) {
+; GCN-LABEL: v_test_add_v2bf16_vc_lo:
+; GCN:       ; %bb.0:
+; GCN-NEXT:    s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1 ; msbs: dst=0 src0=0 src1=0 src2=0
+; GCN-NEXT:    v_pk_add_bf16 v2, v2, 2.0
+; GCN-NEXT:    global_store_b32 v[0:1], v2, off
+; GCN-NEXT:    s_endpgm
+  %add = fadd <2 x bfloat> %a, <bfloat 2.0, bfloat 0.0>
+  store <2 x bfloat> %add, ptr addrspace(1) %out
+  ret void
+}
+
+; Non-splat inline constant <0.0, C>: C must be read into the high result lane
+; only (default op_sel).
+define amdgpu_ps void @v_test_add_v2bf16_vc_hi(ptr addrspace(1) %out, <2 x bfloat> %a) {
+; GCN-LABEL: v_test_add_v2bf16_vc_hi:
+; GCN:       ; %bb.0:
+; GCN-NEXT:    s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1 ; msbs: dst=0 src0=0 src1=0 src2=0
+; GCN-NEXT:    v_pk_add_bf16 v2, v2, 2.0 op_sel:[0,1] op_sel_hi:[1,0]
+; GCN-NEXT:    global_store_b32 v[0:1], v2, off
+; GCN-NEXT:    s_endpgm
+  %add = fadd <2 x bfloat> %a, <bfloat 0.0, bfloat 2.0>
+  store <2 x bfloat> %add, ptr addrspace(1) %out
+  ret void
+}
+
 define amdgpu_ps void @v_test_add_v2bf16_vl(ptr addrspace(1) %out, <2 x bfloat> %a) {
 ; GCN-LABEL: v_test_add_v2bf16_vl:
 ; GCN:       ; %bb.0:
