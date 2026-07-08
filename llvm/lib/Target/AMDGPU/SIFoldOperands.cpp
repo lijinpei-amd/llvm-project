@@ -207,11 +207,11 @@ public:
 
   bool updateOperand(FoldCandidate &Fold) const;
 
-  bool canUseImmWithOpSel(const MachineInstr *MI, unsigned UseOpNo,
+  bool canUseImmVOP3OpSelHigh(const MachineInstr *MI, unsigned UseOpNo,
                           int64_t ImmVal) const;
 
   /// Try to fold immediate \p ImmVal into \p MI's operand at index \p UseOpNo.
-  bool tryFoldImmWithOpSel(MachineInstr *MI, unsigned UseOpNo,
+  bool tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseOpNo,
                            int64_t ImmVal) const;
 
   bool tryAddToFoldList(SmallVectorImpl<FoldCandidate> &FoldList,
@@ -447,7 +447,7 @@ FunctionPass *llvm::createSIFoldOperandsLegacyPass() {
   return new SIFoldOperandsLegacy();
 }
 
-bool SIFoldOperandsImpl::canUseImmWithOpSel(const MachineInstr *MI,
+bool SIFoldOperandsImpl::canUseImmVOP3OpSelHigh(const MachineInstr *MI,
                                             unsigned UseOpNo,
                                             int64_t ImmVal) const {
   if (!SIInstrFlags::isPacked(*MI) || SIInstrFlags::isMAI(*MI) ||
@@ -481,7 +481,7 @@ bool SIFoldOperandsImpl::canUseImmWithOpSel(const MachineInstr *MI,
   return true;
 }
 
-bool SIFoldOperandsImpl::tryFoldImmWithOpSel(MachineInstr *MI, unsigned UseOpNo,
+bool SIFoldOperandsImpl::tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseOpNo,
                                              int64_t ImmVal) const {
   MachineOperand &Old = MI->getOperand(UseOpNo);
   unsigned Opcode = MI->getOpcode();
@@ -613,8 +613,8 @@ bool SIFoldOperandsImpl::updateOperand(FoldCandidate &Fold) const {
   if (Fold.isImm())
     ImmVal = Fold.Def.getEffectiveImmVal();
 
-  if (ImmVal && canUseImmWithOpSel(Fold.UseMI, Fold.UseOpNo, *ImmVal)) {
-    if (tryFoldImmWithOpSel(Fold.UseMI, Fold.UseOpNo, *ImmVal))
+  if (ImmVal && canUseImmVOP3OpSelHigh(Fold.UseMI, Fold.UseOpNo, *ImmVal)) {
+    if (tryFoldImmVOP3OpSelHigh(Fold.UseMI, Fold.UseOpNo, *ImmVal))
       return true;
 
     // We can't represent the candidate as an inline constant. Try as a literal
@@ -840,7 +840,7 @@ bool SIFoldOperandsImpl::tryAddToFoldList(
   bool IsLegal = OpToFold.isOperandLegal(*TII, *MI, OpNo);
   if (!IsLegal && OpToFold.isImm()) {
     if (std::optional<int64_t> ImmVal = OpToFold.getEffectiveImmVal())
-      IsLegal = canUseImmWithOpSel(MI, OpNo, *ImmVal);
+      IsLegal = canUseImmVOP3OpSelHigh(MI, OpNo, *ImmVal);
   }
 
   if (!IsLegal) {
