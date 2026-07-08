@@ -214,6 +214,18 @@ public:
   bool tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseOpNo,
                            int64_t ImmVal) const;
 
+  /// Whether \p ImmVal can be folded into a non-packed VOP3(_OPSEL) instruction
+  /// that takes a packed 16-bit operand (e.g. v_cvt_scalef32_pk_*_bf16). These
+  /// have no op_sel_hi and reuse modifier bit 3 as the destination op_sel, so
+  /// the op_sel-based fold must not run on them; only a splat (broadcast) is
+  /// representable.
+  bool canUseImmVOP3NoOpSelHigh(const MachineInstr *MI, unsigned UseOpNo,
+                      int64_t ImmVal) const;
+
+  /// Try to fold immediate \p ImmVal into such an instruction, leaving all
+  /// modifiers (including the destination op_sel) untouched.
+  bool tryFoldImmVOP3NoOpSelHigh(MachineInstr *MI, unsigned UseOpNo, int64_t ImmVal) const;
+
   bool tryAddToFoldList(SmallVectorImpl<FoldCandidate> &FoldList,
                         MachineInstr *MI, unsigned OpNo,
                         const FoldableDef &OpToFold) const;
@@ -470,10 +482,12 @@ bool SIFoldOperandsImpl::canUseImmVOP3OpSelHigh(const MachineInstr *MI,
   case AMDGPU::OPERAND_REG_INLINE_C_V2FP16:
   case AMDGPU::OPERAND_REG_INLINE_C_V2BF16:
   case AMDGPU::OPERAND_REG_INLINE_C_V2INT16:
-    // VOP3 packed instructions ignore op_sel source modifiers, we cannot encode
-    // two different constants.
-    if (SIInstrFlags::isVOP3(*MI) && !SIInstrFlags::isVOP3P(*MI) &&
-        static_cast<uint16_t>(ImmVal) != static_cast<uint16_t>(ImmVal >> 16))
+    // Non-packed-encoding VOP3(_OPSEL) instructions that operate on packed 16-bit
+    // data (e.g. v_cvt_scalef32_pk_*_bf16/f16) have no op_sel_hi; their modifier
+    // bit 3 is the destination op_sel (DST_OP_SEL), not a source selector. The
+    // op_sel-based rewrite here would corrupt it, and an inline constant on such
+    // ops is broadcast anyway. Reject them; they are folded by tryFoldImmVOP3NoOpSelHigh.
+    if (SIInstrFlags::isVOP3(*MI) && !SIInstrFlags::isVOP3P(*MI))
       return false;
     break;
   }
@@ -604,6 +618,79 @@ bool SIFoldOperandsImpl::tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseO
   return false;
 }
 
+bool SIFoldOperandsImpl::canUseImmVOP3NoOpSelHigh(const MachineInstr *MI,
+                                        unsigned UseOpNo, int64_t ImmVal) const {
+  // Same base eligibility as canUseImmVOP3OpSelHigh (operates on packed data, and is
+  // not a matrix / op_sel-hazard DOT op) -- this is the non-VOP3P case that
+  // canUseImmVOP3OpSelHigh now rejects, handled here instead.
+  if (!SIInstrFlags::isPacked(*MI) || SIInstrFlags::isMAI(*MI) ||
+      SIInstrFlags::isWMMA(*MI) || SIInstrFlags::isSWMMAC(*MI) ||
+      (ST->hasDOTOpSelHazard() && SIInstrFlags::isDOT(*MI)))
+    return false;
+
+  // Only non-packed-encoding VOP3(_OPSEL) ops. Packed (VOP3P) ops are handled by
+  // canUseImmVOP3OpSelHigh / tryFoldImmVOP3OpSelHigh; there modifier bit 3 is op_sel_hi,
+  // not the destination op_sel.
+  if (!SIInstrFlags::isVOP3(*MI) || SIInstrFlags::isVOP3P(*MI))
+    return false;
+
+  const MachineOperand &Old = MI->getOperand(UseOpNo);
+  int OpNo = MI->getOperandNo(&Old);
+  uint8_t OpType = TII->get(MI->getOpcode()).operands()[OpNo].OperandType;
+  switch (OpType) {
+  case AMDGPU::OPERAND_REG_IMM_V2FP16:
+  case AMDGPU::OPERAND_REG_IMM_V2BF16:
+  case AMDGPU::OPERAND_REG_IMM_V2INT16:
+  case AMDGPU::OPERAND_REG_IMM_NOINLINE_V2FP16:
+  case AMDGPU::OPERAND_REG_INLINE_C_V2FP16:
+  case AMDGPU::OPERAND_REG_INLINE_C_V2BF16:
+  case AMDGPU::OPERAND_REG_INLINE_C_V2INT16:
+    break;
+  default:
+    return false;
+  }
+
+  // No op_sel_hi: the two packed lanes cannot select different source halves, so
+  // an inline constant is broadcast. Only a splat (equal halves) is foldable.
+  return static_cast<uint16_t>(ImmVal) == static_cast<uint16_t>(ImmVal >> 16);
+}
+
+bool SIFoldOperandsImpl::tryFoldImmVOP3NoOpSelHigh(MachineInstr *MI, unsigned UseOpNo,
+                                         int64_t ImmVal) const {
+  if (!canUseImmVOP3NoOpSelHigh(MI, UseOpNo, ImmVal))
+    return false;
+
+  MachineOperand &Old = MI->getOperand(UseOpNo);
+  int OpNo = MI->getOperandNo(&Old);
+  uint8_t OpType = TII->get(MI->getOpcode()).operands()[OpNo].OperandType;
+
+  // Fold WITHOUT touching any modifier so the destination op_sel (modifier bit
+  // 3) is preserved.
+  // A packed inline constant is the broadcast 16-bit value: getInlineEncodingV2*
+  // matches the 16-bit pattern (e.g. 0x4080), not the 32-bit splat (0x40804080).
+  // Fold to that value, leaving every modifier -- including the destination
+  // op_sel in bit 3 -- untouched.
+  uint16_t Lo = static_cast<uint16_t>(ImmVal);
+  if (AMDGPU::isInlinableLiteralV216(Lo, OpType)) {
+    Old.ChangeToImmediate(Lo);
+    return true;
+  }
+  // Sign-extended form (helps negative packed integers).
+  if (static_cast<int16_t>(Lo) < 0) {
+    int32_t SExt = static_cast<int16_t>(Lo);
+    if (AMDGPU::isInlinableLiteralV216(SExt, OpType)) {
+      Old.ChangeToImmediate(SExt);
+      return true;
+    }
+  }
+  // Otherwise fall back to a 32-bit literal if legal.
+  MachineOperand New = MachineOperand::CreateImm(ImmVal);
+  if (!TII->isOperandLegal(*MI, OpNo, &New))
+    return false;
+  Old.ChangeToImmediate(ImmVal);
+  return true;
+}
+
 bool SIFoldOperandsImpl::updateOperand(FoldCandidate &Fold) const {
   MachineInstr *MI = Fold.UseMI;
   MachineOperand &Old = MI->getOperand(Fold.UseOpNo);
@@ -626,6 +713,9 @@ bool SIFoldOperandsImpl::updateOperand(FoldCandidate &Fold) const {
     Old.ChangeToImmediate(*ImmVal);
     return true;
   }
+
+  if (ImmVal && tryFoldImmVOP3NoOpSelHigh(Fold.UseMI, Fold.UseOpNo, *ImmVal))
+    return true;
 
   if ((Fold.isImm() || Fold.isFI() || Fold.isGlobal()) && Fold.needsShrink()) {
     MachineBasicBlock *MBB = MI->getParent();
@@ -840,7 +930,8 @@ bool SIFoldOperandsImpl::tryAddToFoldList(
   bool IsLegal = OpToFold.isOperandLegal(*TII, *MI, OpNo);
   if (!IsLegal && OpToFold.isImm()) {
     if (std::optional<int64_t> ImmVal = OpToFold.getEffectiveImmVal())
-      IsLegal = canUseImmVOP3OpSelHigh(MI, OpNo, *ImmVal);
+      IsLegal = canUseImmVOP3OpSelHigh(MI, OpNo, *ImmVal) ||
+                canUseImmVOP3NoOpSelHigh(MI, OpNo, *ImmVal);
   }
 
   if (!IsLegal) {

@@ -710,7 +710,7 @@ define <2 x i16> @test_cvt_scalef32_pk_fp8_bf16_imm_word1(<2 x i16> %old, float 
 ; GCN-LABEL: test_cvt_scalef32_pk_fp8_bf16_imm_word1:
 ; GCN:       ; %bb.0:
 ; GCN-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GCN-NEXT:    v_cvt_scalef32_pk_fp8_bf16 v0, 4.0, v1
+; GCN-NEXT:    v_cvt_scalef32_pk_fp8_bf16 v0, 4.0, v1 op_sel:[0,0,1]
 ; GCN-NEXT:    s_setpc_b64 s[30:31]
   %ret = tail call <2 x i16> @llvm.amdgcn.cvt.scalef32.pk.fp8.bf16(<2 x i16> %old, <2 x bfloat> <bfloat 4.0, bfloat 4.0>, float %scale, i1 true)
   ret <2 x i16> %ret
@@ -730,7 +730,7 @@ define <2 x i16> @test_cvt_scalef32_pk_fp8_f16_imm_word1(<2 x i16> %old, float %
 ; GCN-LABEL: test_cvt_scalef32_pk_fp8_f16_imm_word1:
 ; GCN:       ; %bb.0:
 ; GCN-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GCN-NEXT:    v_cvt_scalef32_pk_fp8_f16 v0, 4.0, v1
+; GCN-NEXT:    v_cvt_scalef32_pk_fp8_f16 v0, 4.0, v1 op_sel:[0,0,1]
 ; GCN-NEXT:    s_setpc_b64 s[30:31]
   %ret = tail call <2 x i16> @llvm.amdgcn.cvt.scalef32.pk.fp8.f16(<2 x i16> %old, <2 x half> <half 4.0, half 4.0>, float %scale, i1 true)
   ret <2 x i16> %ret
