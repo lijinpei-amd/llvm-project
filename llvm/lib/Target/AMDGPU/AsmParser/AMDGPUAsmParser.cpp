@@ -2468,8 +2468,6 @@ void AMDGPUOperand::addLiteralImmOperand(MCInst &Inst, int64_t Val, bool ApplyMo
 
     case AMDGPU::OPERAND_REG_IMM_BF16:
     case AMDGPU::OPERAND_REG_INLINE_C_BF16:
-    case AMDGPU::OPERAND_REG_INLINE_C_V2BF16:
-    case AMDGPU::OPERAND_REG_IMM_V2BF16:
       if (Lit == LitModifier::None && AsmParser->hasInv2PiInlineImm() &&
           Literal == 0x3fc45f306725feed) {
         // This is the 1/(2*pi) which is going to be truncated to bf16 with the
@@ -2480,6 +2478,30 @@ void AMDGPUOperand::addLiteralImmOperand(MCInst &Inst, int64_t Val, bool ApplyMo
         return;
       }
       [[fallthrough]];
+
+    case AMDGPU::OPERAND_REG_IMM_V2BF16:
+    case AMDGPU::OPERAND_REG_INLINE_C_V2BF16: {
+      // Packed BF16 rides the F32 inline-constant encoding: the BF16 datum is
+      // delivered in the *high* 16 bits of the (F32) source. Round the literal
+      // to BF16 and place it in the high half so inline constants (e.g. 2.0)
+      // are recognized as such rather than emitted as 32-bit literals.
+      if (OpTy == AMDGPU::OPERAND_REG_IMM_V2BF16 ||
+          OpTy == AMDGPU::OPERAND_REG_INLINE_C_V2BF16) {
+        if (Lit == LitModifier::None && AsmParser->hasInv2PiInlineImm() &&
+            Literal == 0x3fc45f306725feed) {
+          // 1/(2*pi) is inline-encodable only as the full F32 pattern.
+          Val = 0x3e22f983;
+          break;
+        }
+        bool lost;
+        APFloat FPLiteral(APFloat::IEEEdouble(), Literal);
+        FPLiteral.convert(APFloat::BFloat(), APFloat::rmNearestTiesToEven,
+                          &lost);
+        Val = FPLiteral.bitcastToAPInt().getZExtValue() << 16;
+        break;
+      }
+      [[fallthrough]];
+    }
 
     case AMDGPU::OPERAND_REG_IMM_INT32:
     case AMDGPU::OPERAND_REG_IMM_FP32:

@@ -574,10 +574,13 @@ void AMDGPUDisassembler::decodeImmOperands(MCInst &MI,
         Imm <= AMDGPU::EncValues::INLINE_FLOATING_C_MAX) {
       switch (OpDesc.OperandType) {
       case AMDGPU::OPERAND_REG_IMM_BF16:
-      case AMDGPU::OPERAND_REG_IMM_V2BF16:
       case AMDGPU::OPERAND_REG_INLINE_C_BF16:
-      case AMDGPU::OPERAND_REG_INLINE_C_V2BF16:
         Imm = getInlineImmValBF16(Imm);
+        break;
+      case AMDGPU::OPERAND_REG_IMM_V2BF16:
+      case AMDGPU::OPERAND_REG_INLINE_C_V2BF16:
+        // Packed BF16 float inline constants decode to the F32 ROM value.
+        Imm = getInlineImmVal32(Imm);
         break;
       case AMDGPU::OPERAND_REG_IMM_FP16:
       case AMDGPU::OPERAND_REG_INLINE_C_FP16:
@@ -1686,10 +1689,10 @@ AMDGPUDisassembler::decodeLiteralConstant(const MCInstrDesc &Desc,
     llvm_unreachable("Unexpected operand type!");
   case AMDGPU::OPERAND_REG_IMM_BF16:
   case AMDGPU::OPERAND_REG_INLINE_C_BF16:
-  case AMDGPU::OPERAND_REG_INLINE_C_V2BF16:
     UseLit = AMDGPU::isInlinableLiteralBF16(Val, HasInv2Pi);
     break;
   case AMDGPU::OPERAND_REG_IMM_V2BF16:
+  case AMDGPU::OPERAND_REG_INLINE_C_V2BF16:
     UseLit = AMDGPU::isInlinableLiteralV2BF16(Val);
     break;
   case AMDGPU::OPERAND_REG_IMM_FP16:

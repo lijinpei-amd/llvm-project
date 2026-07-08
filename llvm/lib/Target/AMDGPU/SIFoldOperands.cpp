@@ -530,7 +530,8 @@ bool SIFoldOperandsImpl::tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseO
   unsigned NewModVal = ModVal & ~(SISrcMods::OP_SEL_0 | SISrcMods::OP_SEL_1);
 
   // Packed BF16 floating-point inline constants use the F32 inline-constant
-  // encoding, so the BF16 datum is delivered in the *high* 16 bits of the
+  // encoding: a BF16 value C is representable only as the full F32 pattern
+  // (C << 16), so the BF16 datum is delivered in the *high* 16 bits of the
   // source (the low 16 bits are zero) -- the opposite of the F16 convention.
   // A result lane therefore reads the constant value when its op_sel bit is 1
   // and reads +0.0 when its op_sel bit is 0. Handle such constants explicitly;
@@ -540,7 +541,7 @@ bool SIFoldOperandsImpl::tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseO
   if (OpType == AMDGPU::OPERAND_REG_IMM_V2BF16 ||
       OpType == AMDGPU::OPERAND_REG_INLINE_C_V2BF16) {
     auto IsBF16FPInline = [](uint16_t V) {
-      return AMDGPU::isInlinableLiteralV2BF16(V) &&
+      return AMDGPU::isInlinableLiteralV2BF16(static_cast<uint32_t>(V) << 16) &&
              !AMDGPU::isInlinableIntLiteral(static_cast<int16_t>(V));
     };
     bool LoFP = IsBF16FPInline(ImmLo);
@@ -548,7 +549,8 @@ bool SIFoldOperandsImpl::tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseO
     if (LoFP || HiFP) {
       // Foldable to a single inline constant only if every lane is either
       // +0.0 or the same floating-point value C. A lane holding C reads the
-      // high half (op_sel = 1); a +0.0 lane reads the (zero) low half.
+      // high half (op_sel = 1); a +0.0 lane reads the (zero) low half. The
+      // folded immediate is the F32 pattern (C << 16).
       uint16_t C = LoFP ? ImmLo : ImmHi;
       bool LoOk = LoFP ? (ImmLo == C) : (ImmLo == 0);
       bool HiOk = HiFP ? (ImmHi == C) : (ImmHi == 0);
@@ -559,7 +561,7 @@ bool SIFoldOperandsImpl::tryFoldImmVOP3OpSelHigh(MachineInstr *MI, unsigned UseO
         if (ImmHi == C)
           NewMod |= SISrcMods::OP_SEL_1;
         Mod.setImm(NewMod);
-        Old.ChangeToImmediate(C);
+        Old.ChangeToImmediate(static_cast<uint32_t>(C) << 16);
         return true;
       }
       // Mixed distinct values (or a value paired with a non-zero, non-inline
@@ -707,18 +709,24 @@ bool SIFoldOperandsImpl::tryFoldImmVOP3NoOpSelHigh(MachineInstr *MI, unsigned Us
   uint8_t OpType = TII->get(MI->getOpcode()).operands()[OpNo].OperandType;
 
   // Fold WITHOUT touching any modifier so the destination op_sel (modifier bit
-  // 3) is preserved.
-  // A packed inline constant is the broadcast 16-bit value: getInlineEncodingV2*
-  // matches the 16-bit pattern (e.g. 0x4080), not the 32-bit splat (0x40804080).
-  // Fold to that value, leaving every modifier -- including the destination
-  // op_sel in bit 3 -- untouched.
+  // 3) is preserved. The inline constant is broadcast into both lanes (no
+  // op_sel_hi here), and canUseImmVOP3NoOpSelHigh has already required a splat.
+  //
+  // For F16/I16 the broadcast datum is the bare 16-bit pattern (e.g. 0x4080).
+  // BF16 fp inline constants instead ride the F32 inline-constant encoding, so
+  // the representable immediate is the F32 pattern (value << 16); the hardware
+  // broadcasts the underlying inline code into both bf16 lanes regardless.
   uint16_t Lo = static_cast<uint16_t>(ImmVal);
-  if (AMDGPU::isInlinableLiteralV216(Lo, OpType)) {
-    Old.ChangeToImmediate(Lo);
+  bool IsBF16 = OpType == AMDGPU::OPERAND_REG_IMM_V2BF16 ||
+                OpType == AMDGPU::OPERAND_REG_INLINE_C_V2BF16;
+  uint32_t Inline = IsBF16 ? (static_cast<uint32_t>(Lo) << 16) : Lo;
+  if (AMDGPU::isInlinableLiteralV216(Inline, OpType)) {
+    Old.ChangeToImmediate(Inline);
     return true;
   }
-  // Sign-extended form (helps negative packed integers).
-  if (static_cast<int16_t>(Lo) < 0) {
+  // Sign-extended form (helps negative packed integers; not applicable to the
+  // BF16 high-half encoding).
+  if (!IsBF16 && static_cast<int16_t>(Lo) < 0) {
     int32_t SExt = static_cast<int16_t>(Lo);
     if (AMDGPU::isInlinableLiteralV216(SExt, OpType)) {
       Old.ChangeToImmediate(SExt);

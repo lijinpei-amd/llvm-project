@@ -3795,7 +3795,11 @@ def : GCNPat<
 let SubtargetPredicate = HasBF16PackedInsts in
 def : GCNPat<
   (fcanonicalize (v2bf16 (VOP3PMods v2bf16:$src, i32:$src_mods))),
-  (V_PK_MUL_BF16 0, (i32 CONST.BF16_ONE), $src_mods, $src, DSTCLAMP.NONE)
+  // BF16 packed fp inline constants ride the F32 inline-constant encoding: the
+  // BF16 datum (1.0) sits in the high 16 bits of the F32 value (0x3f800000), so
+  // both result lanes must read the high half (op_sel[0] and op_sel_hi[0] = 1).
+  (V_PK_MUL_BF16 (i32 !or(SRCMODS.OP_SEL_0, SRCMODS.OP_SEL_1)),
+                 (i32 CONST.FP32_ONE), $src_mods, $src, DSTCLAMP.NONE)
 >;
 
 def : GCNPat<

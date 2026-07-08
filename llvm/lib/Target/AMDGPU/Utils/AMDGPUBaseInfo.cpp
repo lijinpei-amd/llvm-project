@@ -3170,30 +3170,16 @@ std::optional<unsigned> getInlineEncodingV2I16(uint32_t Literal) {
 
 // Encoding of the literal as an inline constant for a V_PK_*_BF16 instruction
 // or nullopt.
+//
+// BF16 packed instructions materialize a float inline constant as the
+// single-precision (F32) ROM value -- the BF16 datum is the high 16 bits and the
+// low 16 bits carry the rest of the F32 mantissa -- exactly like the UI16 path
+// (getInlineEncodingV216 with IsFloat=false). So the inline literal is the F32
+// bit pattern, not the 16-bit BF16 value. (Consequently 1/(2*pi), whose F32 low
+// bits are non-zero, is inline-encodable only as the full F32 0x3E22F983, not as
+// a BF16-truncated value.)
 std::optional<unsigned> getInlineEncodingV2BF16(uint32_t Literal) {
-  int32_t Signed = static_cast<int32_t>(Literal);
-  if (Signed >= 0 && Signed <= 64)
-    return 128 + Signed;
-
-  if (Signed >= -16 && Signed <= -1)
-    return 192 + std::abs(Signed);
-
-  // clang-format off
-  switch (Literal) {
-  case 0x3F00: return 240; // 0.5
-  case 0xBF00: return 241; // -0.5
-  case 0x3F80: return 242; // 1.0
-  case 0xBF80: return 243; // -1.0
-  case 0x4000: return 244; // 2.0
-  case 0xC000: return 245; // -2.0
-  case 0x4080: return 246; // 4.0
-  case 0xC080: return 247; // -4.0
-  case 0x3E22: return 248; // 1.0 / (2.0 * pi)
-  default: break;
-  }
-  // clang-format on
-
-  return std::nullopt;
+  return getInlineEncodingV216(/*IsFloat=*/false, Literal);
 }
 
 // Encoding of the literal as an inline constant for a V_PK_*_F16 instruction
