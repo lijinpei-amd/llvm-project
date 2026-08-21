@@ -19,6 +19,7 @@ def : PredicateProlog<[{
 def WriteBranch : SchedWrite;
 def WriteExport : SchedWrite;
 def WriteLDS    : SchedWrite;
+def WriteLDSB128 : SchedWrite;
 def WriteSALU   : SchedWrite;
 def WriteSMEM   : SchedWrite;
 def WriteVMEM   : SchedWrite;
@@ -147,6 +148,9 @@ def HWRC   : ProcResource<1> { // Register destination cache
   let BufferSize = 1;
 }
 def HWXDL   : ProcResource<1> { // MFMA CU
+  let BufferSize = 0;
+}
+def HWLDSIssue : ProcResource<1> { // LDS issue port
   let BufferSize = 0;
 }
 
@@ -384,6 +388,10 @@ def : InstRW<[WriteMFMAScale_16X16X128_F8F6F4, MIMFMARead],
        (instregex "^V_MFMA(_SCALE)?_.32_16X16X128_F8F6F4")>;
 def : InstRW<[WriteMFMAScale_32X32X64_F8F6F4,  MIMFMARead],
         (instregex "^V_MFMA(_SCALE)?_.32_32X32X64_F8F6F4")>;
+
+let ReleaseAtCycles = [1, 8] in
+def : HWWriteRes<WriteLDSB128, [HWLGKM, HWLDSIssue], 5>;
+def : InstRW<[WriteLDSB128], (instregex "^DS_READ_B128")>;
 
 } // End SchedModel = SIDPGFX950FullSpeedModel
 
