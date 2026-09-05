@@ -289,6 +289,28 @@ static cl::opt<unsigned>
     MIResourceCutOff("misched-resource-cutoff", cl::Hidden,
                      cl::desc("Number of intervals to track"), cl::init(10));
 
+// EXPERIMENT: force a named ProcResource to be the zone's critical resource,
+// instead of letting it be elected by whichever resource happens to have the
+// highest scaled count. Pairs with -amdgpu-coexec-xdl-critical, which pins the
+// same choice inside coexec's own HWUInfo ranking; without this the generic
+// SchedBoundary tracker still elects its own (e.g. HWVMEMLDSIssue).
+static cl::opt<std::string> MISchedPinCritRes(
+    "misched-pin-critical-res", cl::Hidden, cl::init(""),
+    cl::desc("Pin the SchedBoundary critical resource to this ProcResource "
+             "name (e.g. HWXDL); empty means normal election"));
+
+// Resolve MISchedPinCritRes to a ProcResource index for this model, or 0 if the
+// option is unset or names nothing this target has.
+static unsigned getPinnedCritResIdx(const TargetSchedModel *SchedModel) {
+  if (MISchedPinCritRes.empty() || !SchedModel->hasInstrSchedModel())
+    return 0;
+  for (unsigned PIdx = 1, PEnd = SchedModel->getNumProcResourceKinds();
+       PIdx != PEnd; ++PIdx)
+    if (MISchedPinCritRes == SchedModel->getResourceName(PIdx))
+      return PIdx;
+  return 0;
+}
+
 // DAG subtrees must have at least this many nodes.
 static const unsigned MinSubtreeSize = 8;
 
@@ -2782,12 +2804,19 @@ getOtherResourceCount(unsigned &OtherCritIdx) {
     + (RetiredMOps * SchedModel->getMicroOpFactor());
   LLVM_DEBUG(dbgs() << "  " << Available.getName() << " + Remain MOps: "
                     << OtherCritCount / SchedModel->getMicroOpFactor() << '\n');
-  for (unsigned PIdx = 1, PEnd = SchedModel->getNumProcResourceKinds();
-       PIdx != PEnd; ++PIdx) {
-    unsigned OtherCount = getResourceCount(PIdx) + Rem->RemainingCounts[PIdx];
-    if (OtherCount > OtherCritCount) {
-      OtherCritCount = OtherCount;
-      OtherCritIdx = PIdx;
+  // When pinned, the "other zone" critical resource is pinned too, so the two
+  // sides agree and buildPolicy's ReduceResIdx/DemandResIdx both name it.
+  if (unsigned Pinned = getPinnedCritResIdx(SchedModel)) {
+    OtherCritCount = getResourceCount(Pinned) + Rem->RemainingCounts[Pinned];
+    OtherCritIdx = Pinned;
+  } else {
+    for (unsigned PIdx = 1, PEnd = SchedModel->getNumProcResourceKinds();
+         PIdx != PEnd; ++PIdx) {
+      unsigned OtherCount = getResourceCount(PIdx) + Rem->RemainingCounts[PIdx];
+      if (OtherCount > OtherCritCount) {
+        OtherCritCount = OtherCount;
+        OtherCritIdx = PIdx;
+      }
     }
   }
   if (OtherCritIdx) {
@@ -2916,8 +2945,19 @@ unsigned SchedBoundary::countResource(const MCSchedClassDesc *SC, unsigned PIdx,
   Rem->RemainingCounts[PIdx] -= Count;
 
   // Check if this resource exceeds the current critical resource. If so, it
-  // becomes the critical resource.
-  if (ZoneCritResIdx != PIdx && (getResourceCount(PIdx) > getCriticalCount())) {
+  // becomes the critical resource. When pinned, only the pinned resource is
+  // ever allowed to claim the slot, and it claims it on first use.
+  if (unsigned Pinned = getPinnedCritResIdx(SchedModel)) {
+    if (ZoneCritResIdx != Pinned && PIdx == Pinned) {
+      ZoneCritResIdx = Pinned;
+      LLVM_DEBUG(dbgs() << "  *** Critical resource (pinned) "
+                        << SchedModel->getResourceName(Pinned) << ": "
+                        << getResourceCount(Pinned) /
+                               SchedModel->getLatencyFactor()
+                        << "c\n");
+    }
+  } else if (ZoneCritResIdx != PIdx &&
+             (getResourceCount(PIdx) > getCriticalCount())) {
     ZoneCritResIdx = PIdx;
     LLVM_DEBUG(dbgs() << "  *** Critical resource "
                       << SchedModel->getResourceName(PIdx) << ": "
@@ -2984,7 +3024,8 @@ void SchedBoundary::bumpNode(SUnit *SU) {
 
       // If scaled micro-ops are now more than the previous critical resource by
       // a full cycle, then micro-ops issue becomes critical.
-      if ((int)(ScaledMOps - getResourceCount(ZoneCritResIdx))
+      if (!getPinnedCritResIdx(SchedModel) &&
+          (int)(ScaledMOps - getResourceCount(ZoneCritResIdx))
           >= (int)SchedModel->getLatencyFactor()) {
         ZoneCritResIdx = 0;
         LLVM_DEBUG(dbgs() << "  *** Critical resource NumMicroOps: "
