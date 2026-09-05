@@ -21,11 +21,44 @@
 #include "SIRegisterInfo.h"
 #include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/InitializePasses.h"
+#include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
 
 #define DEBUG_TYPE "amdgpu-prepare-agpr-alloc"
+
+/// Force the destination of an LDS read into an AGPR, when every consumer of that
+/// value is an MFMA A or B source. Normally these land in
+/// VGPRs and the allocator never reconsiders. On gfx90a+ the DS load vdst operand
+/// is an AV_LdSt_* class, so an AGPR destination is directly encodable and no
+/// pseudo is needed -- only the virtual register's class has to be narrowed.
+///
+/// The point is register-pressure relief: on a kernel whose accumulators already
+/// fill the VGPR budget, moving LDS results to the AGPR half of the unified file
+/// frees VGPRs. It is a pessimisation whenever the consumer cannot read an AGPR,
+/// because then the inserted COPY survives as a v_accvgpr_read, so this is opt-in.
+///
+/// Enable per function with the "amdgpu-ds-read-agpr" attribute, or globally with
+/// this flag.
+static cl::opt<bool> ForceDSReadAGPR(
+    "amdgpu-ds-read-agpr", cl::Hidden, cl::init(false),
+    cl::desc("Force MFMA-feeding LDS read destinations into AGPRs everywhere"));
+
+/// Honours the flag, then the per-function attribute. Any value other than
+/// "false"/"0" counts as enabled, so a bare attribute works.
+static bool wantsDSReadAGPR(const Function &F) {
+  if (ForceDSReadAGPR)
+    return true;
+  Attribute A = F.getFnAttribute("amdgpu-ds-read-agpr");
+  if (!A.isValid())
+    return false;
+  if (!A.isStringAttribute())
+    return true;
+  StringRef V = A.getValueAsString();
+  return V != "false" && V != "0";
+}
 
 namespace {
 
@@ -35,6 +68,8 @@ private:
   MachineRegisterInfo &MRI;
 
   bool isAV64Imm(const MachineOperand &MO) const;
+  bool onlyFeedsMFMASrcAB(Register Reg) const;
+  bool forceDSReadsToAGPR(MachineFunction &MF);
 
 public:
   AMDGPUPrepareAGPRAllocImpl(const GCNSubtarget &ST, MachineRegisterInfo &MRI)
@@ -53,7 +88,11 @@ public:
   StringRef getPassName() const override { return "AMDGPU Prepare AGPR Alloc"; }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.setPreservesAll();
+    // Only setPreservesCFG, not setPreservesAll: the DS-read-to-AGPR transform
+    // inserts COPY instructions, which invalidates live intervals. It never
+    // changes the CFG. (Before that transform existed this pass only rewrote
+    // opcodes in place and could preserve everything.)
+    AU.setPreservesCFG();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 };
@@ -78,22 +117,117 @@ PreservedAnalyses
 AMDGPUPrepareAGPRAllocPass::run(MachineFunction &MF,
                                 MachineFunctionAnalysisManager &MFAM) {
   const GCNSubtarget &ST = MF.getSubtarget<GCNSubtarget>();
-  AMDGPUPrepareAGPRAllocImpl(ST, MF.getRegInfo()).run(MF);
-  return PreservedAnalyses::all();
+  if (!AMDGPUPrepareAGPRAllocImpl(ST, MF.getRegInfo()).run(MF))
+    return PreservedAnalyses::all();
+  PreservedAnalyses PA;
+  PA.preserveSet<CFGAnalyses>();
+  return PA;
 }
 
 bool AMDGPUPrepareAGPRAllocImpl::isAV64Imm(const MachineOperand &MO) const {
   return MO.isImm() && TII.isLegalAV64PseudoImm(MO.getImm());
 }
 
+/// True when every use of \p Reg is the A or B source of an MFMA.
+///
+/// Those are the only consumers for which an AGPR destination is free: MFMA reads
+/// its A/B operands from either file, so the value never has to cross back. A use
+/// anywhere else -- a VALU, a copy, a REG_SEQUENCE, or the MFMA accumulator
+/// operand -- would force a v_accvgpr_read, trading the register-pressure win for
+/// extra instructions in the loop. Anything unrecognised is rejected.
+bool AMDGPUPrepareAGPRAllocImpl::onlyFeedsMFMASrcAB(Register Reg) const {
+  if (MRI.use_nodbg_empty(Reg))
+    return false;
+
+  for (const MachineOperand &MO : MRI.use_nodbg_operands(Reg)) {
+    const MachineInstr *UseMI = MO.getParent();
+    if (!SIInstrInfo::isMAI(*UseMI))
+      return false;
+
+    unsigned OpIdx = UseMI->getOperandNo(&MO);
+    int Src0 =
+        AMDGPU::getNamedOperandIdx(UseMI->getOpcode(), AMDGPU::OpName::src0);
+    int Src1 =
+        AMDGPU::getNamedOperandIdx(UseMI->getOpcode(), AMDGPU::OpName::src1);
+    if (static_cast<int>(OpIdx) != Src0 && static_cast<int>(OpIdx) != Src1)
+      return false;
+  }
+
+  return true;
+}
+
+/// Retarget each LDS read to a fresh AGPR and copy back to the original register.
+/// Going through a COPY rather than just renaming the class keeps every consumer
+/// legal: the coalescer folds the copy away wherever the use can take an AGPR
+/// (an MFMA source, say), and leaves a v_accvgpr_read where it cannot.
+bool AMDGPUPrepareAGPRAllocImpl::forceDSReadsToAGPR(MachineFunction &MF) {
+  const SIRegisterInfo &TRI = *MF.getSubtarget<GCNSubtarget>().getRegisterInfo();
+  bool Changed = false;
+
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      if (!SIInstrInfo::isDS(MI) || !MI.mayLoad())
+        continue;
+
+      MachineOperand *Dst = TII.getNamedOperand(MI, AMDGPU::OpName::vdst);
+      if (!Dst || !Dst->isReg() || !Dst->getReg().isVirtual() || Dst->getSubReg())
+        continue;
+
+      // A tied vdst_in (the read-modify-write DS forms) would need the input in
+      // an AGPR too; not worth the extra copy, so leave those alone.
+      if (MI.isRegTiedToUseOperand(MI.getOperandNo(Dst)))
+        continue;
+
+      Register Old = Dst->getReg();
+      if (!onlyFeedsMFMASrcAB(Old))
+        continue;
+
+      const TargetRegisterClass *RC = MRI.getRegClass(Old);
+      if (!TRI.hasVGPRs(RC))
+        continue;
+      const TargetRegisterClass *ARC = TRI.getEquivalentAGPRClass(RC);
+      if (!ARC || ARC == RC)
+        continue;
+
+      // The common case: the DS vdst operand is an AV_LdSt_* class, so the
+      // virtual register starts out as AV (either file) and every consumer has
+      // already accepted that. Narrowing it to the AGPR subclass is then just a
+      // constraint -- no copy, nothing for a later pass to fold back.
+      if (TRI.hasAGPRs(RC)) {
+        MRI.setRegClass(Old, ARC);
+        Changed = true;
+        continue;
+      }
+
+      // Pure VGPR destination: some consumer demanded a VGPR, so the value has
+      // to come back across the file boundary explicitly.
+      Register New = MRI.createVirtualRegister(ARC);
+      Dst->setReg(New);
+      BuildMI(MBB, std::next(MI.getIterator()), MI.getDebugLoc(),
+              TII.get(AMDGPU::COPY), Old)
+          .addReg(New);
+      Changed = true;
+    }
+  }
+
+  return Changed;
+}
+
 bool AMDGPUPrepareAGPRAllocImpl::run(MachineFunction &MF) {
   if (MRI.isReserved(AMDGPU::AGPR0))
     return false;
 
+  // Record the command-line override as a real attribute. Everything downstream
+  // (SIRegisterInfo::getLargestLegalSuperClass) then has a single thing to test.
+  if (ForceDSReadAGPR && !MF.getFunction().hasFnAttribute("amdgpu-ds-read-agpr"))
+    MF.getFunction().addFnAttr("amdgpu-ds-read-agpr");
+
+  bool ChangedDS = wantsDSReadAGPR(MF.getFunction()) && forceDSReadsToAGPR(MF);
+
   const MCInstrDesc &AVImmPseudo32 = TII.get(AMDGPU::AV_MOV_B32_IMM_PSEUDO);
   const MCInstrDesc &AVImmPseudo64 = TII.get(AMDGPU::AV_MOV_B64_IMM_PSEUDO);
 
-  bool Changed = false;
+  bool Changed = ChangedDS;
   for (MachineBasicBlock &MBB : MF) {
     for (MachineInstr &MI : MBB) {
       if ((MI.getOpcode() == AMDGPU::V_MOV_B32_e32 &&

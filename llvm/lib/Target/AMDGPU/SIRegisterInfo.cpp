@@ -482,6 +482,14 @@ SIRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
   // equivalent AV class. If used one, the verifier will crash after
   // RegBankSelect in the GISel flow. The aligned regclasses are not fully given
   // until Instruction selection.
+  // Under "amdgpu-ds-read-agpr" an AGPR class was chosen on purpose (see
+  // AMDGPUPrepareAGPRAlloc). Inflating it to AV would let the coalescer discharge
+  // the copy by moving the definition back into a VGPR, undoing the transform.
+  // VGPR classes still inflate normally, so only the forced registers are pinned.
+  if (isAGPRClass(RC) &&
+      MF.getFunction().hasFnAttribute("amdgpu-ds-read-agpr"))
+    return RC;
+
   if (ST.hasMAIInsts() && (isVGPRClass(RC) || isAGPRClass(RC))) {
     if (RC == &AMDGPU::VGPR_32RegClass || RC == &AMDGPU::AGPR_32RegClass)
       return &AMDGPU::AV_32RegClass;
@@ -528,6 +536,27 @@ SIRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
   }
 
   return TargetRegisterInfo::getLargestLegalSuperClass(RC, MF);
+}
+
+/// Under "amdgpu-ds-read-agpr" the LDS reads were deliberately given AGPR
+/// destinations, each feeding a COPY back to a VGPR (see AMDGPUPrepareAGPRAlloc).
+/// Coalescing that copy is exactly the wrong move: the joined register has to live
+/// in one file or the other, and the coalescer resolves it by pulling the
+/// definition back into a VGPR, silently undoing the transform. Refuse to join
+/// across the AGPR/VGPR boundary so the forced destinations survive to allocation.
+bool SIRegisterInfo::shouldCoalesce(MachineInstr *MI,
+                                    const TargetRegisterClass *SrcRC,
+                                    unsigned SubReg,
+                                    const TargetRegisterClass *DstRC,
+                                    unsigned DstSubReg,
+                                    const TargetRegisterClass *NewRC,
+                                    LiveIntervals &LIS) const {
+  if (MI->getMF()->getFunction().hasFnAttribute("amdgpu-ds-read-agpr") &&
+      (isAGPRClass(SrcRC) != isAGPRClass(DstRC)))
+    return false;
+
+  return TargetRegisterInfo::shouldCoalesce(MI, SrcRC, SubReg, DstRC, DstSubReg,
+                                            NewRC, LIS);
 }
 
 Register SIRegisterInfo::getFrameRegister(const MachineFunction &MF) const {

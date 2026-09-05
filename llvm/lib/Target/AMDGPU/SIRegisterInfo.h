@@ -296,6 +296,11 @@ public:
   const TargetRegisterClass *
   getEquivalentAGPRClass(const TargetRegisterClass *SRC) const;
 
+  bool shouldCoalesce(MachineInstr *MI, const TargetRegisterClass *SrcRC,
+                      unsigned SubReg, const TargetRegisterClass *DstRC,
+                      unsigned DstSubReg, const TargetRegisterClass *NewRC,
+                      LiveIntervals &LIS) const override;
+
   /// \returns An AGPR+VGPR super reg class with the same width as \p SRC
   const TargetRegisterClass *
   getEquivalentAVClass(const TargetRegisterClass *SRC) const;
