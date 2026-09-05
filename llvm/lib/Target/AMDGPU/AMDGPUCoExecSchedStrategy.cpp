@@ -314,6 +314,13 @@ bool CandidateHeuristics::tryCriticalResourceDependency(
                     HWUI.getType() == InstructionFlavor::WMMA;
     auto *TargetSU = HWUI.getNextTargetSU(LookDeep);
 
+    // HasPrioritySU() already checked for a target SU, but it computes LookDeep
+    // from both candidates while this uses Cand alone -- so the two can resolve
+    // different SUs and this one can still be null. IsReachable() asserts on a
+    // null SUnit.
+    if (!TargetSU)
+      return false;
+
     bool CandEnables =
         TargetSU != Cand.SU && DAG->IsReachable(TargetSU, Cand.SU);
     bool TryCandEnables =
