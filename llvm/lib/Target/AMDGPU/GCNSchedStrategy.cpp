@@ -48,6 +48,31 @@
 
 using namespace llvm;
 
+/// Keep a region's new schedule even when the pressure heuristic wants it thrown
+/// away. GCNSchedStage::checkScheduling reverts a region whenever occupancy would
+/// drop or mayCauseSpilling() fires, which discards the scheduler's work wholesale
+/// -- including the coexec strategy's, whose whole point is an instruction order
+/// the pressure model scores badly. The revert is a heuristic, not a correctness
+/// requirement: the allocator still has to succeed either way, and if it spills,
+/// it spills. This makes that trade explicit and measurable.
+///
+/// Enable per function with "amdgpu-no-sched-revert", or globally with this flag.
+static cl::opt<bool> DisableSchedRevert(
+    "amdgpu-no-sched-revert", cl::Hidden, cl::init(false),
+    cl::desc("Never revert a region's schedule on a pressure regression"));
+
+static bool noSchedRevert(const Function &F) {
+  if (DisableSchedRevert)
+    return true;
+  Attribute A = F.getFnAttribute("amdgpu-no-sched-revert");
+  if (!A.isValid())
+    return false;
+  if (!A.isStringAttribute())
+    return true;
+  StringRef V = A.getValueAsString();
+  return V != "false" && V != "0";
+}
+
 static cl::opt<bool> DisableUnclusterHighRP(
     "amdgpu-disable-unclustered-high-rp-reschedule", cl::Hidden,
     cl::desc("Disable unclustered high register pressure "
@@ -2012,7 +2037,14 @@ void GCNSchedStage::checkScheduling() {
 
   // Revert if this region's schedule would cause a drop in occupancy or
   // spilling.
-  if (shouldRevertScheduling(WavesAfter)) {
+  bool Revert = shouldRevertScheduling(WavesAfter);
+  if (Revert && noSchedRevert(MF.getFunction())) {
+    LLVM_DEBUG(dbgs() << "Keeping schedule for region " << RegionIdx
+                      << " despite the pressure regression "
+                         "(amdgpu-no-sched-revert)\n");
+    Revert = false;
+  }
+  if (Revert) {
     modifyRegionSchedule(RegionIdx, Unsched);
     std::tie(DAG.RegionBegin, DAG.RegionEnd) = DAG.Regions[RegionIdx];
   } else {
