@@ -21,6 +21,20 @@ using namespace llvm::AMDGPU;
 
 #define DEBUG_TYPE "machine-scheduler"
 
+/// Treat the MFMA unit (InstructionFlavor::WMMA, the HWXDL port) as the only
+/// critical resource: rank it first, and make the critical-resource heuristics
+/// consider nothing else.
+///
+/// Ranking alone is a no-op here: WMMA already sorts first, because it is the
+/// only coexec-window producer present. What does change behaviour is the
+/// fall-through -- when WMMA has no priority SU, the loops below go on to
+/// consult DS, VMEM and DMA and let those decide the pick. Restricting the
+/// search to WMMA keeps every critical-resource decision anchored on the unit
+/// that is actually critical.
+static cl::opt<bool> CoExecForceXDLCritical(
+    "amdgpu-coexec-xdl-critical", cl::Hidden, cl::init(false),
+    cl::desc("Always treat the MFMA unit as coexec's critical resource"));
+
 namespace {
 
 // Used to disable post-RA scheduling with function level granularity.
@@ -266,6 +280,14 @@ void CandidateHeuristics::dumpRegionSummary() {
 void CandidateHeuristics::sortHWUIResources() {
   // Highest priority should be first.
   llvm::sort(HWUInfo, [](HardwareUnitInfo &A, HardwareUnitInfo &B) {
+    // Hard-pinned: the MFMA unit outranks everything.
+    if (CoExecForceXDLCritical) {
+      bool AIsXDL = A.getType() == InstructionFlavor::WMMA;
+      bool BIsXDL = B.getType() == InstructionFlavor::WMMA;
+      if (AIsXDL != BIsXDL)
+        return AIsXDL;
+    }
+
     // Prefer CoexecWindow producers
     if (A.producesCoexecWindow() != B.producesCoexecWindow())
       return A.producesCoexecWindow();
@@ -365,6 +387,9 @@ bool CandidateHeuristics::tryCriticalResourceDependency(
   };
 
   for (unsigned I = 0; I < HWUInfo.size(); I++) {
+    if (CoExecForceXDLCritical &&
+        HWUInfo[I].getType() != InstructionFlavor::WMMA)
+      continue;
     // If we have encountered a resource that is not critical, then neither
     // candidate enables a critical resource
     if (!HasPrioritySU(I))
@@ -383,6 +408,8 @@ bool CandidateHeuristics::tryCriticalResource(
     GenericSchedulerBase::SchedCandidate &Cand, SchedBoundary *Zone) const {
   for (unsigned I = 0; I < HWUInfo.size(); I++) {
     const HardwareUnitInfo &HWUI = HWUInfo[I];
+    if (CoExecForceXDLCritical && HWUI.getType() != InstructionFlavor::WMMA)
+      continue;
 
     bool CandUsesCrit = HWUI.contains(Cand.SU);
     bool TryCandUsesCrit = HWUI.contains(TryCand.SU);
