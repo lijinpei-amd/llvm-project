@@ -658,6 +658,29 @@ bool AMDGPUCoExecSchedStrategy::tryCandidateCoexec(SchedCandidate &Cand,
                  biasPhysReg(Cand.SU, Cand.AtTop), TryCand, Cand, PhysReg))
     return TryCand.Reason != NoCand;
 
+  // TEMPORARY INSTRUMENTATION: dump the pressure deltas that RegExcess compares.
+  LLVM_DEBUG({
+    if (Cand.SU && TryCand.SU) {
+      auto Dump = [&](const char *Name, const PressureChange &P) {
+        dbgs() << Name;
+        if (P.isValid())
+          dbgs() << TRI->getRegPressureSetName(P.getPSet()) << ":"
+                 << P.getUnitInc();
+        else
+          dbgs() << "invalid";
+      };
+      dbgs() << "RPDelta try SU(" << TryCand.SU->NodeNum << ") ";
+      Dump("Excess=", TryCand.RPDelta.Excess);
+      Dump(" CritMax=", TryCand.RPDelta.CriticalMax);
+      Dump(" CurMax=", TryCand.RPDelta.CurrentMax);
+      dbgs() << " | cand SU(" << Cand.SU->NodeNum << ") ";
+      Dump("Excess=", Cand.RPDelta.Excess);
+      Dump(" CritMax=", Cand.RPDelta.CriticalMax);
+      Dump(" CurMax=", Cand.RPDelta.CurrentMax);
+      dbgs() << "\n";
+    }
+  });
+
   // Avoid exceeding the target's limit.
   if (!CoExecNoRegPressure && DAG->isTrackingPressure() &&
       tryPressure(TryCand.RPDelta.Excess, Cand.RPDelta.Excess, TryCand, Cand,
