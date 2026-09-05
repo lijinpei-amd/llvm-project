@@ -132,10 +132,43 @@ std::pair<unsigned, unsigned> AMDGPUSubtarget::getOccupancyWithWorkGroupSizes(
           std::clamp(divideCeil(MaxWavesPerCU, getEUsPerCU()), 1U, WavesPerEU)};
 }
 
+/// LDS the kernel allocates *dynamically*, declared for occupancy purposes only.
+///
+/// Occupancy is estimated from static LDS (SIMachineFunctionInfo::getLDSSize(),
+/// i.e. group_segment_fixed_size). A kernel that requests its LDS dynamically at
+/// dispatch declares zero there, so the estimate assumes LDS is free and reports a
+/// far higher occupancy than is achievable -- which then sets the scheduler's
+/// register-pressure limit far too low.
+///
+/// "amdgpu-lds-size" cannot express this: it also feeds StaticLDSSize, so it really
+/// allocates the block and pushes the dynamic region past the end of LDS. This
+/// attribute is read *only* here, so it changes the occupancy estimate and nothing
+/// else -- no allocation, no change to group_segment_fixed_size.
+/// EXPERIMENT: apply this many bytes of dynamic LDS to every kernel, so the
+/// attribute can be swept from the llc command line. 0 = use the attribute only.
+static cl::opt<uint32_t> ForceDynamicLDSSize(
+    "amdgpu-force-dynamic-lds-size", cl::Hidden, cl::init(0),
+    cl::desc("Assume this many bytes of dynamically allocated LDS when "
+             "estimating occupancy (0 = read the amdgpu-dynamic-lds-size attr)"));
+
+static uint32_t getDynamicLDSSize(const Function &F) {
+  if (ForceDynamicLDSSize)
+    return ForceDynamicLDSSize;
+  Attribute A = F.getFnAttribute("amdgpu-dynamic-lds-size");
+  if (!A.isValid() || !A.isStringAttribute())
+    return 0;
+  uint32_t Bytes = 0;
+  if (A.getValueAsString().getAsInteger(0, Bytes))
+    return 0;
+  return Bytes;
+}
+
 std::pair<unsigned, unsigned> AMDGPUSubtarget::getOccupancyWithWorkGroupSizes(
     const MachineFunction &MF) const {
   const auto *MFI = MF.getInfo<SIMachineFunctionInfo>();
-  return getOccupancyWithWorkGroupSizes(MFI->getLDSSize(), MF.getFunction());
+  const Function &F = MF.getFunction();
+  return getOccupancyWithWorkGroupSizes(MFI->getLDSSize() + getDynamicLDSSize(F),
+                                        F);
 }
 
 std::pair<unsigned, unsigned>
@@ -210,7 +243,8 @@ AMDGPUSubtarget::getWavesPerEU(const Function &F) const {
   unsigned LDSBytes =
       AMDGPU::getIntegerPairAttribute(F, "amdgpu-lds-size", {0, UINT32_MAX},
                                       /*OnlyFirstRequired=*/true)
-          .first;
+          .first +
+      getDynamicLDSSize(F);
   return getWavesPerEU(FlatWorkGroupSizes, LDSBytes, F);
 }
 
