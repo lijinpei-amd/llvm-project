@@ -389,7 +389,7 @@ def : InstRW<[WriteMFMAScale_16X16X128_F8F6F4, MIMFMARead],
 def : InstRW<[WriteMFMAScale_32X32X64_F8F6F4,  MIMFMARead],
         (instregex "^V_MFMA(_SCALE)?_.32_32X32X64_F8F6F4")>;
 
-let ReleaseAtCycles = [1, 8] in
+let ReleaseAtCycles = [1, 4] in
 def : HWWriteRes<WriteLDSB128, [HWLGKM, HWLDSIssue], 5>;
 def : InstRW<[WriteLDSB128], (instregex "^DS_READ_B128")>;
 
