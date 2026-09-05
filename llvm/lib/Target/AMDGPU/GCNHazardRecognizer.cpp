@@ -281,7 +281,10 @@ void GCNHazardRecognizer::updateMultiCycleVALUState(const MachineInstr &MI) {
   if (!hasCoExecWindowModel())
     return;
   // Multi-cycle VALU (CVT, etc.) blocks subsequent VALU for repeat rate cycles.
-  if (!SIInstrInfo::isVALU(MI, /*AllowLDSDMA=*/true))
+  // AllowLDSDMA=false on purpose: a direct-to-LDS buffer_load is tagged VALU only
+  // because BUFInstructions.td sets `let VALU = isLds`; getRepeatRate then returns
+  // its LDS-port ReleaseAtCycle and locks out every following VALU, MFMA included.
+  if (!SIInstrInfo::isVALU(MI, /*AllowLDSDMA=*/false))
     return;
 
   // Skip WMMA, MFMA, and TRANS - they have their own tracking.
