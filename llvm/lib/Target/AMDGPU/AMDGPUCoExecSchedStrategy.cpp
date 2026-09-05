@@ -31,6 +31,20 @@ using namespace llvm::AMDGPU;
 /// consult DS, VMEM and DMA and let those decide the pick. Restricting the
 /// search to WMMA keeps every critical-resource decision anchored on the unit
 /// that is actually critical.
+/// Drop register pressure from coexec's candidate comparison entirely -- both
+/// the RegExcess rule (RPDelta.Excess, "avoid exceeding the target's limit")
+/// and the RegMax rule (RPDelta.CurrentMax, "avoid increasing the region's max
+/// pressure").
+///
+/// RegExcess sits above tryEffectiveStall in the ladder, so on a kernel pinned
+/// at the arch-VGPR limit it decides nearly every pick before the stall model is
+/// consulted: a candidate 3 registers over the limit loses to one that cannot
+/// issue for another three cycles. This asks what the strategy does when it
+/// reasons about issue only. The allocator still has to succeed, and may spill.
+static cl::opt<bool> CoExecNoRegPressure(
+    "amdgpu-coexec-no-regpressure", cl::Hidden, cl::init(false),
+    cl::desc("Ignore register pressure in coexec's candidate comparison"));
+
 static cl::opt<bool> CoExecForceXDLCritical(
     "amdgpu-coexec-xdl-critical", cl::Hidden, cl::init(false),
     cl::desc("Always treat the MFMA unit as coexec's critical resource"));
@@ -645,7 +659,7 @@ bool AMDGPUCoExecSchedStrategy::tryCandidateCoexec(SchedCandidate &Cand,
     return TryCand.Reason != NoCand;
 
   // Avoid exceeding the target's limit.
-  if (DAG->isTrackingPressure() &&
+  if (!CoExecNoRegPressure && DAG->isTrackingPressure() &&
       tryPressure(TryCand.RPDelta.Excess, Cand.RPDelta.Excess, TryCand, Cand,
                   RegExcess, TRI, DAG->MF))
     return TryCand.Reason != NoCand;
@@ -699,7 +713,8 @@ bool AMDGPUCoExecSchedStrategy::tryCandidateCoexec(SchedCandidate &Cand,
   }
 
   // Avoid increasing the max pressure of the entire region.
-  if (DAG->isTrackingPressure() &&
+  if (!CoExecNoRegPressure &&
+      DAG->isTrackingPressure() &&
       tryPressure(TryCand.RPDelta.CurrentMax, Cand.RPDelta.CurrentMax, TryCand,
                   Cand, RegMax, TRI, DAG->MF))
     return TryCand.Reason != NoCand;
