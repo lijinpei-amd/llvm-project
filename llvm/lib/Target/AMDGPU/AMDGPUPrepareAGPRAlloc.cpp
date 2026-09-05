@@ -46,6 +46,34 @@ static cl::opt<bool> ForceDSReadAGPR(
     "amdgpu-ds-read-agpr", cl::Hidden, cl::init(false),
     cl::desc("Force MFMA-feeding LDS read destinations into AGPRs everywhere"));
 
+/// Tie each MFMA's D operand to its C operand, so the accumulate chain is forced
+/// to update one register in place instead of leaving the allocator free to pick a
+/// separate destination. Saves a full accumulator's worth of registers per chain
+/// where it applies.
+///
+/// The tie is added before TwoAddressInstructionPass, which is what makes it safe:
+/// where C is still live afterwards that pass inserts the copy for us, rather than
+/// the value being silently clobbered.
+///
+/// Enable per function with "amdgpu-mfma-tied-cd", or globally with this flag.
+static cl::opt<bool> ForceMFMATiedCD(
+    "amdgpu-mfma-tied-cd", cl::Hidden, cl::init(false),
+    cl::desc("Tie MFMA D to C for every function"));
+
+/// Honours the flag, then the per-function attribute. Any value other than
+/// "false"/"0" counts as enabled, so a bare attribute works.
+static bool wantsAttr(const Function &F, StringRef Name, bool Flag) {
+  if (Flag)
+    return true;
+  Attribute A = F.getFnAttribute(Name);
+  if (!A.isValid())
+    return false;
+  if (!A.isStringAttribute())
+    return true;
+  StringRef V = A.getValueAsString();
+  return V != "false" && V != "0";
+}
+
 /// Honours the flag, then the per-function attribute. Any value other than
 /// "false"/"0" counts as enabled, so a bare attribute works.
 static bool wantsDSReadAGPR(const Function &F) {
@@ -70,6 +98,7 @@ private:
   bool isAV64Imm(const MachineOperand &MO) const;
   bool onlyFeedsMFMASrcAB(Register Reg) const;
   bool forceDSReadsToAGPR(MachineFunction &MF);
+  bool tieMFMADstToSrc2(MachineFunction &MF);
 
 public:
   AMDGPUPrepareAGPRAllocImpl(const GCNSubtarget &ST, MachineRegisterInfo &MRI)
@@ -213,9 +242,63 @@ bool AMDGPUPrepareAGPRAllocImpl::forceDSReadsToAGPR(MachineFunction &MF) {
   return Changed;
 }
 
+/// Add a "$vdst = $src2" tie to every MFMA that does not already have one.
+bool AMDGPUPrepareAGPRAllocImpl::tieMFMADstToSrc2(MachineFunction &MF) {
+  bool Changed = false;
+
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      if (!SIInstrInfo::isMAI(MI))
+        continue;
+
+      int DstIdx =
+          AMDGPU::getNamedOperandIdx(MI.getOpcode(), AMDGPU::OpName::vdst);
+      int Src2Idx =
+          AMDGPU::getNamedOperandIdx(MI.getOpcode(), AMDGPU::OpName::src2);
+      if (DstIdx < 0 || Src2Idx < 0)
+        continue;
+
+      MachineOperand &Dst = MI.getOperand(DstIdx);
+      MachineOperand &Src2 = MI.getOperand(Src2Idx);
+
+      // src2 is an immediate for the first MFMA of a chain (the zero seed); there
+      // is nothing to tie to, and the allocator is already free to reuse.
+      if (!Dst.isReg() || !Src2.isReg())
+        continue;
+      if (!Dst.getReg().isVirtual() || !Src2.getReg().isVirtual())
+        continue;
+      if (Dst.getSubReg() || Src2.getSubReg())
+        continue;
+
+      // The wide-accumulator forms declare "@earlyclobber $vdst" precisely
+      // because D must not overlap the sources; those already have a separate
+      // _mac_e64 opcode when a tie is wanted.
+      if (Dst.isEarlyClobber() || MI.isRegTiedToUseOperand(DstIdx))
+        continue;
+
+      if (MRI.getRegClass(Dst.getReg()) != MRI.getRegClass(Src2.getReg()))
+        continue;
+
+      MI.tieOperands(DstIdx, Src2Idx);
+      Changed = true;
+    }
+  }
+
+  return Changed;
+}
+
 bool AMDGPUPrepareAGPRAllocImpl::run(MachineFunction &MF) {
+  if (ForceMFMATiedCD && !MF.getFunction().hasFnAttribute("amdgpu-mfma-tied-cd"))
+    MF.getFunction().addFnAttr("amdgpu-mfma-tied-cd");
+
+  // Deliberately ahead of the AGPR bail-out below: tying D to C needs no AGPRs,
+  // so it still applies to functions compiled with amdgpu-agpr-alloc=0.
+  bool ChangedTie =
+      wantsAttr(MF.getFunction(), "amdgpu-mfma-tied-cd", ForceMFMATiedCD) &&
+      tieMFMADstToSrc2(MF);
+
   if (MRI.isReserved(AMDGPU::AGPR0))
-    return false;
+    return ChangedTie;
 
   // Record the command-line override as a real attribute. Everything downstream
   // (SIRegisterInfo::getLargestLegalSuperClass) then has a single thing to test.
@@ -227,7 +310,7 @@ bool AMDGPUPrepareAGPRAllocImpl::run(MachineFunction &MF) {
   const MCInstrDesc &AVImmPseudo32 = TII.get(AMDGPU::AV_MOV_B32_IMM_PSEUDO);
   const MCInstrDesc &AVImmPseudo64 = TII.get(AMDGPU::AV_MOV_B64_IMM_PSEUDO);
 
-  bool Changed = ChangedDS;
+  bool Changed = ChangedDS || ChangedTie;
   for (MachineBasicBlock &MBB : MF) {
     for (MachineInstr &MI : MBB) {
       if ((MI.getOpcode() == AMDGPU::V_MOV_B32_e32 &&
