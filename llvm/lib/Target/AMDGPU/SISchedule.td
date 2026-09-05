@@ -20,6 +20,7 @@ def WriteBranch : SchedWrite;
 def WriteExport : SchedWrite;
 def WriteLDS    : SchedWrite;
 def WriteLDSB128 : SchedWrite;
+def WriteVMEMToLDS : SchedWrite;
 def WriteSALU   : SchedWrite;
 def WriteSMEM   : SchedWrite;
 def WriteVMEM   : SchedWrite;
@@ -151,6 +152,9 @@ def HWXDL   : ProcResource<1> { // MFMA CU
   let BufferSize = 0;
 }
 def HWLDSIssue : ProcResource<1> { // LDS issue port
+  let BufferSize = 0;
+}
+def HWVMEMLDSIssue : ProcResource<1> { // direct-to-LDS (buffer_load ... lds) port
   let BufferSize = 0;
 }
 
@@ -389,6 +393,19 @@ def : InstRW<[WriteMFMAScale_16X16X128_F8F6F4, MIMFMARead],
 def : InstRW<[WriteMFMAScale_32X32X64_F8F6F4,  MIMFMARead],
         (instregex "^V_MFMA(_SCALE)?_.32_32X32X64_F8F6F4")>;
 
+// EXPERIMENT, not for upstream. A direct-to-LDS load (buffer_load ... lds) does
+// not just occupy the VMEM pipe: it also holds the LDS write port. The default
+// model prices it as a plain WriteVMEM, so the scheduler happily issues a run of
+// them back to back. HWVMEMLDSIssue is unbuffered (BufferSize = 0), so holding it
+// for N cycles makes each such load a structural hazard for the next one, the
+// same way HWXDL already serialises MFMAs. Swept 8 -> 16 -> 32.
+let ReleaseAtCycles = [1, 16] in
+def : HWWriteRes<WriteVMEMToLDS, [HWVMEM, HWVMEMLDSIssue], 80>;
+def : InstRW<[WriteVMEMToLDS], (instregex "^BUFFER_LOAD_.*_LDS")>;
+
+// Same idea for the LDS read side, at 4 cycles rather than 8. Separate resource
+// from HWVMEMLDSIssue, so a ds_read and a direct-to-LDS load do not contend with
+// each other -- if they should, the two InstRWs can name the same resource.
 let ReleaseAtCycles = [1, 4] in
 def : HWWriteRes<WriteLDSB128, [HWLGKM, HWLDSIssue], 5>;
 def : InstRW<[WriteLDSB128], (instregex "^DS_READ_B128")>;
