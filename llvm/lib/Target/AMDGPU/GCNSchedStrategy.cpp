@@ -208,6 +208,15 @@ void GCNSchedStrategy::initialize(ScheduleDAGMI *DAG) {
   AGPRCriticalLimit = std::min(VGPRCriticalLimit, AGPRExcessLimit);
 
   // Apply VGPR excess threshold percentage if specified.
+  // TEMPORARY INSTRUMENTATION: the limits that actually drive RPDelta.Excess /
+  // CriticalMax, which are NOT RegClassInfo::getRegPressureSetLimit.
+  LLVM_DEBUG(dbgs() << "GCN limits: TargetOccupancy=" << TargetOccupancy
+                    << " VGPRExcessLimit=" << VGPRExcessLimit
+                    << " VGPRCriticalLimit=" << VGPRCriticalLimit
+                    << " SGPRExcessLimit=" << SGPRExcessLimit
+                    << " SGPRCriticalLimit=" << SGPRCriticalLimit
+                    << " KnownExcessRP=" << KnownExcessRP << '\n');
+
   if (VGPRThresholdPercent > 0) {
     [[maybe_unused]] unsigned OriginalVGPRExcessLimit = VGPRExcessLimit;
     [[maybe_unused]] unsigned OriginalVGPRCriticalLimit = VGPRCriticalLimit;
@@ -408,6 +417,12 @@ void GCNSchedStrategy::initCandidate(SchedCandidate &Cand, SUnit *SU,
     HasHighPressure = true;
     Cand.RPDelta.Excess = PressureChange(AMDGPU::RegisterPressureSets::VGPR_32);
     Cand.RPDelta.Excess.setUnitInc(NewVGPRPressure - VGPRExcessLimit);
+    // TEMPORARY INSTRUMENTATION
+    LLVM_DEBUG(dbgs() << "ExcessSet SU(" << Cand.SU->NodeNum
+                      << ") NewVGPRPressure=" << NewVGPRPressure
+                      << " VGPRExcessLimit=" << VGPRExcessLimit
+                      << " inc=" << (NewVGPRPressure - VGPRExcessLimit)
+                      << " (incoming VGPRPressure=" << VGPRPressure << ")\n");
   }
 
   if (ShouldTrackAGPRs && NewAGPRPressure >= AGPRExcessLimit) {
