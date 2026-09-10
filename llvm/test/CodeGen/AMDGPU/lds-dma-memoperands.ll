@@ -40,7 +40,7 @@ define amdgpu_ps void @buffer_load_lds(ptr addrspace(8) inreg %src, ptr addrspac
   ; GISEL-NEXT:   [[COPY4:%[0-9]+]]:sreg_32 = COPY $sgpr4
   ; GISEL-NEXT:   [[S_MOV_B32_:%[0-9]+]]:sreg_32 = S_MOV_B32 0
   ; GISEL-NEXT:   $m0 = COPY [[COPY4]]
-  ; GISEL-NEXT:   BUFFER_LOAD_DWORD_LDS_OFFSET [[REG_SEQUENCE]], [[S_MOV_B32_]], 16, 0, 0, 0, implicit $exec, implicit $m0 :: (dereferenceable load (s32) from `ptr addrspace(8) poison`, align 1, addrspace 8), (dereferenceable store (s32) into %ir.src, align 1, addrspace 3)
+  ; GISEL-NEXT:   BUFFER_LOAD_DWORD_LDS_OFFSET [[REG_SEQUENCE]], [[S_MOV_B32_]], 16, 0, 0, 0, implicit $exec, implicit $m0 :: (dereferenceable load (i32) from %ir.src, align 1, addrspace 8), (dereferenceable store (s2048) into %ir.dst + 16, align 1, addrspace 3)
   ; GISEL-NEXT:   S_ENDPGM 0
   call void @llvm.amdgcn.raw.ptr.buffer.load.lds(
       ptr addrspace(8) %src, ptr addrspace(3) %dst,
@@ -71,7 +71,7 @@ define amdgpu_ps void @global_load_lds(ptr addrspace(1) %src, ptr addrspace(3) i
   ; GISEL-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:vreg_64 = REG_SEQUENCE [[COPY]], %subreg.sub0, [[COPY1]], %subreg.sub1
   ; GISEL-NEXT:   [[COPY2:%[0-9]+]]:sreg_32 = COPY $sgpr0
   ; GISEL-NEXT:   $m0 = COPY [[COPY2]]
-  ; GISEL-NEXT:   GLOBAL_LOAD_LDS_DWORD [[REG_SEQUENCE]], 16, 0, 0, implicit $m0, implicit $exec :: (load (s32) from `ptr addrspace(1) poison` + 16, align 1, addrspace 1), (store (s32) into %ir.src + 16, addrspace 3)
+  ; GISEL-NEXT:   GLOBAL_LOAD_LDS_DWORD [[REG_SEQUENCE]], 16, 0, 0, implicit $m0, implicit $exec :: (load (i32) from %ir.src + 16, align 1, addrspace 1), (store (s2048) into %ir.dst + 16, align 1, addrspace 3)
   ; GISEL-NEXT:   S_ENDPGM 0
   call void @llvm.amdgcn.global.load.lds(
       ptr addrspace(1) %src, ptr addrspace(3) %dst,
