@@ -356,9 +356,8 @@ define amdgpu_ps void @load_to_lds_p7_dword_nontemporal(ptr addrspace(7) inreg %
 ;
 ; GFX942-GISEL-LABEL: load_to_lds_p7_dword_nontemporal:
 ; GFX942-GISEL:       ; %bb.0:
-; GFX942-GISEL-NEXT:    v_add_u32_e32 v0, s4, v0
 ; GFX942-GISEL-NEXT:    s_mov_b32 m0, s5
-; GFX942-GISEL-NEXT:    s_nop 0
+; GFX942-GISEL-NEXT:    v_add_u32_e32 v0, s4, v0
 ; GFX942-GISEL-NEXT:    buffer_load_dword v0, s[0:3], 0 offen nt lds
 ; GFX942-GISEL-NEXT:    buffer_load_dword v0, s[0:3], 0 offen offset:512 lds
 ; GFX942-GISEL-NEXT:    s_endpgm

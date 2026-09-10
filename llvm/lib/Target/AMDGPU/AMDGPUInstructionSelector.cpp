@@ -2425,10 +2425,6 @@ bool AMDGPUInstructionSelector::selectG_INTRINSIC_W_SIDE_EFFECTS(
   case Intrinsic::amdgcn_struct_ptr_buffer_load_lds:
   case Intrinsic::amdgcn_struct_ptr_buffer_load_async_lds:
     return selectBufferLoadLds(I);
-  // Until we can store both the address space of the global and the LDS
-  // arguments by having tto MachineMemOperands on an intrinsic, we just trust
-  // that the argument is a global pointer (buffer pointers have been handled by
-  // a LLVM IR-level lowering).
   case Intrinsic::amdgcn_load_to_lds:
   case Intrinsic::amdgcn_load_async_to_lds:
   case Intrinsic::amdgcn_global_load_lds:
@@ -3611,27 +3607,7 @@ bool AMDGPUInstructionSelector::selectBufferLoadLds(MachineInstr &MI) const {
           ? 1
           : 0); // swz
 
-  MachineMemOperand *LoadMMO = *MI.memoperands_begin();
-  // Don't set the offset value here because the pointer points to the base of
-  // the buffer.
-  MachinePointerInfo LoadPtrI = LoadMMO->getPointerInfo();
-
-  MachinePointerInfo StorePtrI = LoadPtrI;
-  LoadPtrI.V = PoisonValue::get(PointerType::get(MF->getFunction().getContext(),
-                                                 AMDGPUAS::BUFFER_RESOURCE));
-  LoadPtrI.AddrSpace = AMDGPUAS::BUFFER_RESOURCE;
-  StorePtrI.AddrSpace = AMDGPUAS::LOCAL_ADDRESS;
-
-  auto F = LoadMMO->getFlags() &
-           ~(MachineMemOperand::MOStore | MachineMemOperand::MOLoad);
-  LoadMMO = MF->getMachineMemOperand(LoadPtrI, F | MachineMemOperand::MOLoad,
-                                     Size, LoadMMO->getBaseAlign());
-
-  MachineMemOperand *StoreMMO =
-      MF->getMachineMemOperand(StorePtrI, F | MachineMemOperand::MOStore,
-                               sizeof(int32_t), LoadMMO->getBaseAlign());
-
-  MIB.setMemRefs({LoadMMO, StoreMMO});
+  MIB.cloneMemRefs(MI);
 
   MI.eraseFromParent();
   constrainSelectedInstRegOperands(*MIB, TII, TRI, RBI);
@@ -3811,23 +3787,7 @@ bool AMDGPUInstructionSelector::selectGlobalLoadLds(MachineInstr &MI) const{
   unsigned Aux = MI.getOperand(5).getImm();
   MIB.addImm(Aux & ~AMDGPU::CPol::VIRTUAL_BITS); // cpol
 
-  MachineMemOperand *LoadMMO = *MI.memoperands_begin();
-  MachinePointerInfo LoadPtrI = LoadMMO->getPointerInfo();
-  LoadPtrI.Offset = MI.getOperand(4).getImm();
-  MachinePointerInfo StorePtrI = LoadPtrI;
-  LoadPtrI.V = PoisonValue::get(PointerType::get(MF->getFunction().getContext(),
-                                                 AMDGPUAS::GLOBAL_ADDRESS));
-  LoadPtrI.AddrSpace = AMDGPUAS::GLOBAL_ADDRESS;
-  StorePtrI.AddrSpace = AMDGPUAS::LOCAL_ADDRESS;
-  auto F = LoadMMO->getFlags() &
-           ~(MachineMemOperand::MOStore | MachineMemOperand::MOLoad);
-  LoadMMO = MF->getMachineMemOperand(LoadPtrI, F | MachineMemOperand::MOLoad,
-                                     Size, LoadMMO->getBaseAlign());
-  MachineMemOperand *StoreMMO =
-      MF->getMachineMemOperand(StorePtrI, F | MachineMemOperand::MOStore,
-                               sizeof(int32_t), Align(4));
-
-  MIB.setMemRefs({LoadMMO, StoreMMO});
+  MIB.cloneMemRefs(MI);
 
   MI.eraseFromParent();
   constrainSelectedInstRegOperands(*MIB, TII, TRI, RBI);

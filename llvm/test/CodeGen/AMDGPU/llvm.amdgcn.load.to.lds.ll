@@ -297,9 +297,8 @@ define amdgpu_ps void @buffer_load_lds_dword_volatile(ptr addrspace(7) nocapture
 ;
 ; GFX942-GISEL-LABEL: buffer_load_lds_dword_volatile:
 ; GFX942-GISEL:       ; %bb.0: ; %main_body
-; GFX942-GISEL-NEXT:    v_add_u32_e32 v0, s4, v0
 ; GFX942-GISEL-NEXT:    s_mov_b32 m0, s5
-; GFX942-GISEL-NEXT:    s_nop 0
+; GFX942-GISEL-NEXT:    v_add_u32_e32 v0, s4, v0
 ; GFX942-GISEL-NEXT:    buffer_load_dword v0, s[0:3], 0 offen sc0 sc1 lds
 ; GFX942-GISEL-NEXT:    s_waitcnt vmcnt(0)
 ; GFX942-GISEL-NEXT:    buffer_load_dword v0, s[0:3], 0 offen offset:256 lds
