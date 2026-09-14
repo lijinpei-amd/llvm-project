@@ -18,10 +18,9 @@ define i32 @duplicate_exit_cond(i32 %start, i32 %end, i32 %a, i32 %b) {
 ; CHECK-NEXT:    [[IV:%.*]] = phi i32 [ [[IV_NEXT:%.*]], %[[LOOP]] ], [ [[START]], %[[LOOP_PREHEADER]] ]
 ; CHECK-NEXT:    [[V:%.*]] = phi i32 [ [[SEL:%.*]], %[[LOOP]] ], [ [[A]], %[[LOOP_PREHEADER]] ]
 ; CHECK-NEXT:    [[IV_NEXT]] = add nsw i32 [[IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp slt i32 [[IV_NEXT]], [[END]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV_NEXT]], [[END]]
 ; CHECK-NEXT:    [[SEL]] = select i1 [[EXITCOND]], i32 [[B]], i32 [[V]]
-; CHECK-NEXT:    [[EXITCOND1:%.*]] = icmp ne i32 [[IV_NEXT]], [[END]]
-; CHECK-NEXT:    br i1 [[EXITCOND1]], label %[[LOOP]], label %[[EXIT_LOOPEXIT:.*]]
+; CHECK-NEXT:    br i1 [[EXITCOND]], label %[[LOOP]], label %[[EXIT_LOOPEXIT:.*]]
 ; CHECK:       [[EXIT_LOOPEXIT]]:
 ; CHECK-NEXT:    [[V_LCSSA:%.*]] = phi i32 [ [[V]], %[[LOOP]] ]
 ; CHECK-NEXT:    br label %[[EXIT]]
@@ -59,10 +58,9 @@ define i32 @shared_exit_cond(i32 %start, i32 %end, i32 %a, i32 %b) {
 ; CHECK-NEXT:    [[IV:%.*]] = phi i32 [ [[IV_NEXT:%.*]], %[[LOOP]] ], [ [[START]], %[[LOOP_PREHEADER]] ]
 ; CHECK-NEXT:    [[V:%.*]] = phi i32 [ [[SEL:%.*]], %[[LOOP]] ], [ [[A]], %[[LOOP_PREHEADER]] ]
 ; CHECK-NEXT:    [[IV_NEXT]] = add nsw i32 [[IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp slt i32 [[IV_NEXT]], [[END]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV_NEXT]], [[END]]
 ; CHECK-NEXT:    [[SEL]] = select i1 [[EXITCOND]], i32 [[B]], i32 [[V]]
-; CHECK-NEXT:    [[EXITCOND1:%.*]] = icmp ne i32 [[IV_NEXT]], [[END]]
-; CHECK-NEXT:    br i1 [[EXITCOND1]], label %[[LOOP]], label %[[EXIT_LOOPEXIT:.*]]
+; CHECK-NEXT:    br i1 [[EXITCOND]], label %[[LOOP]], label %[[EXIT_LOOPEXIT:.*]]
 ; CHECK:       [[EXIT_LOOPEXIT]]:
 ; CHECK-NEXT:    [[V_LCSSA:%.*]] = phi i32 [ [[V]], %[[LOOP]] ]
 ; CHECK-NEXT:    br label %[[EXIT]]
@@ -94,16 +92,14 @@ define i32 @condition_before_increment(i32 %end, i32 %a, i32 %b) {
 ; CHECK-NEXT:    [[GUARD:%.*]] = icmp sgt i32 [[END]], 0
 ; CHECK-NEXT:    br i1 [[GUARD]], label %[[LOOP_PREHEADER:.*]], label %[[EXIT:.*]]
 ; CHECK:       [[LOOP_PREHEADER]]:
-; CHECK-NEXT:    [[TMP0:%.*]] = add i32 [[END]], 1
 ; CHECK-NEXT:    br label %[[LOOP:.*]]
 ; CHECK:       [[LOOP]]:
 ; CHECK-NEXT:    [[IV:%.*]] = phi i32 [ [[IV_NEXT:%.*]], %[[LOOP]] ], [ 0, %[[LOOP_PREHEADER]] ]
 ; CHECK-NEXT:    [[V:%.*]] = phi i32 [ [[SEL:%.*]], %[[LOOP]] ], [ [[A]], %[[LOOP_PREHEADER]] ]
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp slt i32 [[IV]], [[END]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV]], [[END]]
 ; CHECK-NEXT:    [[SEL]] = select i1 [[EXITCOND]], i32 [[B]], i32 [[V]]
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw i32 [[IV]], 1
-; CHECK-NEXT:    [[EXITCOND1:%.*]] = icmp ne i32 [[IV_NEXT]], [[TMP0]]
-; CHECK-NEXT:    br i1 [[EXITCOND1]], label %[[LOOP]], label %[[EXIT_LOOPEXIT:.*]]
+; CHECK-NEXT:    br i1 [[EXITCOND]], label %[[LOOP]], label %[[EXIT_LOOPEXIT:.*]]
 ; CHECK:       [[EXIT_LOOPEXIT]]:
 ; CHECK-NEXT:    [[V_LCSSA:%.*]] = phi i32 [ [[V]], %[[LOOP]] ]
 ; CHECK-NEXT:    br label %[[EXIT]]
@@ -141,12 +137,11 @@ define i32 @duplicate_exit_cond_in_loop_body(i32 %start, i32 %end, i32 %a, i32 %
 ; CHECK-NEXT:    [[IV:%.*]] = phi i32 [ [[IV_NEXT:%.*]], %[[LATCH:.*]] ], [ [[START]], %[[LOOP_PREHEADER]] ]
 ; CHECK-NEXT:    [[V:%.*]] = phi i32 [ [[SEL:%.*]], %[[LATCH]] ], [ [[A]], %[[LOOP_PREHEADER]] ]
 ; CHECK-NEXT:    [[IV_NEXT]] = add nsw i32 [[IV]], 1
-; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp slt i32 [[IV_NEXT]], [[END]]
+; CHECK-NEXT:    [[EXITCOND:%.*]] = icmp ne i32 [[IV_NEXT]], [[END]]
 ; CHECK-NEXT:    [[SEL]] = select i1 [[EXITCOND]], i32 [[B]], i32 [[V]]
 ; CHECK-NEXT:    br label %[[LATCH]]
 ; CHECK:       [[LATCH]]:
-; CHECK-NEXT:    [[EXITCOND1:%.*]] = icmp ne i32 [[IV_NEXT]], [[END]]
-; CHECK-NEXT:    br i1 [[EXITCOND1]], label %[[LOOP]], label %[[EXIT_LOOPEXIT:.*]]
+; CHECK-NEXT:    br i1 [[EXITCOND]], label %[[LOOP]], label %[[EXIT_LOOPEXIT:.*]]
 ; CHECK:       [[EXIT_LOOPEXIT]]:
 ; CHECK-NEXT:    [[V_LCSSA:%.*]] = phi i32 [ [[V]], %[[LATCH]] ]
 ; CHECK-NEXT:    br label %[[EXIT]]

@@ -865,6 +865,19 @@ static bool needsLFTR(Loop *L, BasicBlock *ExitingBB) {
   return Phi != getLoopPhiForCounter(IncV, L);
 }
 
+/// Return true if SCEV can derive ExitCount from the exit condition without
+/// assuming that it controls the loop's only exit.
+static bool isExitTestAnalyzable(Loop *L, CondBrInst *BI, const SCEV *ExitCount,
+                                 PHINode *IndVar, ScalarEvolution *SE) {
+  // Integer IV increments can be made non-poison by dropping unproven flags.
+  if (!IndVar->getType()->isIntegerTy())
+    return false;
+  bool ExitIfTrue = !L->contains(BI->getSuccessor(0));
+  auto ExitLimit = SE->computeExitLimitFromCond(
+      L, BI->getCondition(), ExitIfTrue, /*ControlsOnlyExit=*/false);
+  return ExitLimit.ExactNotTaken == ExitCount;
+}
+
 /// Recursive helper for hasConcreteDef(). Unfortunately, this currently boils
 /// down to checking that all operands are constant and listing instructions
 /// that may hide undef.
@@ -1065,6 +1078,16 @@ linearFunctionTestReplace(Loop *L, BasicBlock *ExitingBB,
   Instruction * const IncVar =
     cast<Instruction>(IndVar->getIncomingValueForBlock(L->getLoopLatch()));
 
+  CondBrInst *BI = cast<CondBrInst>(ExitingBB->getTerminator());
+  SmallVector<Instruction *, 4> EquivConds;
+  if (isExitTestAnalyzable(L, BI, ExitCount, IndVar, SE))
+    if (auto *OrigCondI = dyn_cast<Instruction>(BI->getCondition()))
+      for (BasicBlock *BB : L->blocks())
+        for (Instruction &I : *BB)
+          if (I.isIdenticalTo(OrigCondI) &&
+              any_of(I.users(), [BI](User *U) { return U != BI; }))
+            EquivConds.push_back(&I);
+
   // Initialize CmpIndVar to the preincremented IV.
   Value *CmpIndVar = IndVar;
   bool UsePostInc = false;
@@ -1081,7 +1104,11 @@ linearFunctionTestReplace(Loop *L, BasicBlock *ExitingBB,
         IndVar->getType()->isIntegerTy() ||
         isLoopExitTestBasedOn(IncVar, ExitingBB) ||
         mustExecuteUBIfPoisonOnPathTo(IncVar, ExitingBB->getTerminator(), DT);
-    if (SafeToPostInc) {
+    // Staying pre-inc may allow the new compare to dominate more equivalent
+    // conditions in the loop.
+    if (SafeToPostInc && all_of(EquivConds, [&](Instruction *I) {
+          return DT->dominates(IncVar, I);
+        })) {
       UsePostInc = true;
       CmpIndVar = IncVar;
     }
@@ -1117,14 +1144,29 @@ linearFunctionTestReplace(Loop *L, BasicBlock *ExitingBB,
   }
 
   // Insert a new icmp_ne or icmp_eq instruction before the branch.
-  CondBrInst *BI = cast<CondBrInst>(ExitingBB->getTerminator());
   ICmpInst::Predicate P;
   if (L->contains(BI->getSuccessor(0)))
     P = ICmpInst::ICMP_NE;
   else
     P = ICmpInst::ICMP_EQ;
 
-  IRBuilder<> Builder(BI);
+  BasicBlock *InsertBB = ExitingBB;
+  BasicBlock::iterator InsertPt = BI->getIterator();
+  if (!EquivConds.empty()) {
+    Instruction *Latest = nullptr;
+    auto TrackLatest = [&](Value *V) {
+      if (auto *I = dyn_cast<Instruction>(V))
+        if (!Latest || DT->dominates(Latest, I))
+          Latest = I;
+    };
+    TrackLatest(CmpIndVar);
+    TrackLatest(ExitCnt);
+    InsertBB = Latest ? Latest->getParent() : L->getHeader();
+    InsertPt = (!Latest || isa<PHINode>(Latest))
+                   ? InsertBB->getFirstInsertionPt()
+                   : std::next(Latest->getIterator());
+  }
+  IRBuilder<> Builder(InsertBB, InsertPt);
 
   // The new loop exit condition should reuse the debug location of the
   // original loop exit condition.
@@ -1184,13 +1226,17 @@ linearFunctionTestReplace(Loop *L, BasicBlock *ExitingBB,
 
   Value *Cond = Builder.CreateICmp(P, CmpIndVar, ExitCnt, "exitcond");
   Value *OrigCond = BI->getCondition();
-  // It's tempting to use replaceAllUsesWith here to fully replace the old
-  // comparison, but that's not immediately safe, since users of the old
-  // comparison may not be dominated by the new comparison. Instead, just
-  // update the branch to use the new comparison; in the common case this
-  // will make old comparison dead.
   BI->setCondition(Cond);
   DeadInsts.emplace_back(OrigCond);
+
+  // Only replace uses the new compare actually dominates.
+  if (auto *CondI = dyn_cast<Instruction>(Cond))
+    for (Instruction *EC : EquivConds) {
+      EC->replaceUsesWithIf(Cond,
+                            [&](Use &U) { return DT->dominates(CondI, U); });
+      if (EC != OrigCond)
+        DeadInsts.emplace_back(EC);
+    }
 
   ++NumLFTR;
   return true;
