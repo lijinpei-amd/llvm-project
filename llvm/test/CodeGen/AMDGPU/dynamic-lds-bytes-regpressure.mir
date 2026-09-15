@@ -1,0 +1,110 @@
+# The kernel declares that it may request up to 32KiB of LDS dynamically at
+# dispatch. That maximum bounds the *minimum* occupancy, which is what
+# SIRegisterInfo::getRegPressureLimit hands to MachineLICM as the VGPR budget,
+# so the last loop-invariant V_CVT_F64_I32 becomes affordable to hoist.
+#
+# The second run overrides the attribute from the command line with a dynamic
+# request of zero, restoring the tighter budget. Note that the declared minimum
+# is 0 in both runs: this is the maximum, and nothing else, taking effect.
+
+# RUN: llc -mtriple=amdgpu9.00 -run-pass early-machinelicm -o - %s \
+# RUN:   | FileCheck -check-prefix=DYNMAX %s
+# RUN: llc -mtriple=amdgpu9.00 -run-pass early-machinelicm \
+# RUN:     -amdgpu-dynamic-lds-bytes=0,0 -o - %s \
+# RUN:   | FileCheck -check-prefix=NODYNMAX %s
+
+# All eighteen are hoisted out of the loop.
+# DYNMAX:            bb.0:
+# DYNMAX-COUNT-18:   V_CVT_F64_I32_e32
+# DYNMAX:            bb.1:
+# DYNMAX-NOT:        V_CVT_F64_I32_e32
+
+# The last one does not fit in the budget and stays in the loop.
+# NODYNMAX:          bb.0:
+# NODYNMAX-COUNT-17: V_CVT_F64_I32_e32
+# NODYNMAX:          bb.1:
+# NODYNMAX:          V_CVT_F64_I32_e32
+
+--- |
+  define amdgpu_kernel void @dynamic_lds_max() #0 {
+    ret void
+  }
+
+  attributes #0 = { "amdgpu-dynamic-lds-bytes"="0,32768" }
+...
+
+---
+name:            dynamic_lds_max
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    successors: %bb.1(0x80000000)
+    liveins: $vcc, $vgpr0
+
+    %0:vgpr_32 = COPY $vgpr0
+    %1:vgpr_32 = COPY $vgpr0
+    %2:vgpr_32 = COPY $vgpr0
+    %3:vgpr_32 = COPY $vgpr0
+    %4:vgpr_32 = COPY $vgpr0
+    %5:vgpr_32 = COPY $vgpr0
+    %6:vgpr_32 = COPY $vgpr0
+    %7:vgpr_32 = COPY $vgpr0
+    %8:vgpr_32 = COPY $vgpr0
+    %9:vgpr_32 = COPY $vgpr0
+    %10:vgpr_32 = COPY $vgpr0
+    %11:vgpr_32 = COPY $vgpr0
+    %12:vgpr_32 = COPY $vgpr0
+    %13:vgpr_32 = COPY $vgpr0
+    %14:vgpr_32 = COPY $vgpr0
+    %15:vgpr_32 = COPY $vgpr0
+    %16:vgpr_32 = COPY $vgpr0
+    %17:vgpr_32 = COPY $vgpr0
+
+  bb.1:
+    successors: %bb.2(0x04000000), %bb.1(0x7c000000)
+    liveins: $vcc
+
+    $vcc = S_AND_B64 $exec, $vcc, implicit-def $scc
+    %18:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %0, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %18, implicit $exec
+    %19:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %1, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %19, implicit $exec
+    %20:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %2, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %20, implicit $exec
+    %21:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %3, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %21, implicit $exec
+    %22:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %4, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %22, implicit $exec
+    %23:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %5, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %23, implicit $exec
+    %24:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %6, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %24, implicit $exec
+    %25:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %7, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %25, implicit $exec
+    %26:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %8, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %26, implicit $exec
+    %27:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %9, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %27, implicit $exec
+    %28:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %10, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %28, implicit $exec
+    %29:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %11, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %29, implicit $exec
+    %30:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %12, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %30, implicit $exec
+    %31:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %13, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %31, implicit $exec
+    %32:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %14, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %32, implicit $exec
+    %33:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %15, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %33, implicit $exec
+    %34:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %16, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %34, implicit $exec
+    %35:vreg_64 = nofpexcept V_CVT_F64_I32_e32 %17, implicit $mode, implicit $exec
+    $vcc = V_CMP_EQ_U64_e64 $vcc, killed %35, implicit $exec
+    S_CBRANCH_VCCNZ %bb.1, implicit $vcc
+    S_BRANCH %bb.2
+
+  bb.2:
+    S_ENDPGM 0
+
+...

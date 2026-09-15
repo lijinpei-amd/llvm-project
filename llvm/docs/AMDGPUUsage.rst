@@ -2625,6 +2625,22 @@ The AMDGPU backend supports the following LLVM IR attributes.
                                                       the frame. This is an internal detail of how LDS variables are lowered,
                                                       language front ends should not set this attribute.
 
+     "amdgpu-dynamic-lds-bytes"="min[,max]"           Hint for dynamic minimum and maximum LDS bytes the kernel requests when
+                                                      launching, i.e. LDS bytes specified in hipLaunchKernel and not part of
+                                                      ``group_segment_fixed_size``. Unlike ``"amdgpu-lds-size"``, it allocates
+                                                      nothing, does not change ``group_segment_fixed_size``, and only helps
+                                                      compiler estimating occupancy. When omitted, default value for min is 0,
+                                                      and default value for max is min; a max below min is raised to min. Since
+                                                      more LDS per workgroup means fewer workgroups per CU, min bounds the
+                                                      maximum occupancy and max bounds the minimum one. Without it the occupancy
+                                                      estimate assumes the dynamic region is free, which reports a higher
+                                                      occupancy than is achievable and in turn sets the scheduler's register
+                                                      budget too low. A value that cannot be parsed is diagnosed and the hint is
+                                                      ignored. The hint is read for every function, not only kernels, and is not
+                                                      consulted by the passes that spend LDS, so declaring it does not prevent
+                                                      ``AMDGPUPromoteAlloca`` from promoting allocas into the LDS the kernel is
+                                                      going to request.
+
      "amdgpu-gds-size"                                Bytes expected to be allocated at the start of GDS memory at entry.
 
      "amdgpu-git-ptr-high"                            The hard-wired high half of the address of the global information table

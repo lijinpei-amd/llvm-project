@@ -136,13 +136,13 @@ public:
 
   /// Subtarget's minimum/maximum occupancy, in number of waves per EU, that can
   /// be achieved when the only function running on a CU is \p F and each
-  /// workgroup running the function requires \p LDSBytes bytes of LDS space.
-  /// This notably depends on the range of allowed flat group sizes for the
-  /// function and hardware characteristics.
+  /// workgroup running the function requires \p LDSBytes bytes of LDS space on
+  /// top of whatever \p F declares it will request dynamically at dispatch
+  /// through the "amdgpu-dynamic-lds-bytes" attribute. This notably depends on
+  /// the range of allowed flat group sizes for the function and hardware
+  /// characteristics.
   std::pair<unsigned, unsigned>
-  getOccupancyWithWorkGroupSizes(uint32_t LDSBytes, const Function &F) const {
-    return getOccupancyWithWorkGroupSizes(LDSBytes, getFlatWorkGroupSizes(F));
-  }
+  getOccupancyWithWorkGroupSizes(uint32_t LDSBytes, const Function &F) const;
 
   /// Overload which uses the specified values for the flat work group sizes,
   /// rather than querying the function itself. \p FlatWorkGroupSizes should

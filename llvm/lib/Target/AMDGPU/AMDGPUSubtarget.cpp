@@ -26,6 +26,9 @@
 #include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/IntrinsicsR600.h"
 #include "llvm/IR/MDBuilder.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 #include <algorithm>
 
 using namespace llvm;
@@ -132,6 +135,81 @@ std::pair<unsigned, unsigned> AMDGPUSubtarget::getOccupancyWithWorkGroupSizes(
           std::clamp(divideCeil(MaxWavesPerCU, getEUsPerCU()), 1U, WavesPerEU)};
 }
 
+static cl::opt<std::string> DynamicLDSBytes(
+    "amdgpu-dynamic-lds-bytes", cl::Hidden, cl::init(""),
+    cl::value_desc("min[,max]"),
+    cl::desc("Assume every function dynamically requests this many bytes of "
+             "LDS when estimating occupancy, overriding the "
+             "\"amdgpu-dynamic-lds-bytes\" function attribute"));
+
+/// Parse a "min[,max]" byte range, using the same grammar as the
+/// "amdgpu-dynamic-lds-bytes" attribute: an omitted maximum defaults to the
+/// minimum, and a maximum below the minimum is raised to it.
+static std::optional<std::pair<uint32_t, uint32_t>>
+parseLDSBytesRange(StringRef S) {
+  auto [MinStr, MaxStr] = S.split(',');
+  uint32_t Min;
+  if (MinStr.trim().getAsInteger(0, Min))
+    return std::nullopt;
+  uint32_t Max = Min;
+  StringRef MaxTrimmed = MaxStr.trim();
+  if (!MaxTrimmed.empty() && MaxTrimmed.getAsInteger(0, Max))
+    return std::nullopt;
+  return std::pair(Min, std::max(Min, Max));
+}
+
+/// \returns the minimum/maximum number of LDS bytes \p F requests dynamically
+/// at dispatch, or {0, 0} if it declares none.
+static std::pair<uint32_t, uint32_t> getDynamicLDSBytes(const Function &F) {
+  // A mistyped command line is a usage error rather than a problem with the IR,
+  // and the option is module-global, so report it once and give up instead of
+  // diagnosing it against every function.
+  StringRef Option = DynamicLDSBytes;
+  if (!Option.empty()) {
+    if (auto Range = parseLDSBytesRange(Option))
+      return *Range;
+    report_fatal_error("invalid -amdgpu-dynamic-lds-bytes=" + Twine(Option),
+                       /*gen_crash_diag=*/false);
+  }
+
+  // Share the "min[,max]" attribute parser with "amdgpu-lds-size" and friends
+  // so that this attribute is spelled, and diagnosed, exactly like they are.
+  if (auto Attr = AMDGPU::getIntegerPairAttribute(F, "amdgpu-dynamic-lds-bytes",
+                                                  /*OnlyFirstRequired=*/true)) {
+    uint32_t Min = Attr->first;
+    return {Min, std::max(Min, Attr->second.value_or(Min))};
+  }
+
+  // Nothing declared: the function is taken to request no dynamic LDS at all.
+  return {0, 0};
+}
+
+/// \returns the per-workgroup LDS in bytes, \p StaticBytes plus
+/// \p DynamicBytes. Requesting more LDS than a CU has is already
+/// indistinguishable from requesting all of it, so the sum is clamped rather
+/// than allowed to wrap around in the occupancy computation.
+static uint32_t totalLDSBytes(const AMDGPUSubtarget &ST, uint64_t StaticBytes,
+                              uint64_t DynamicBytes) {
+  return std::min<uint64_t>(StaticBytes + DynamicBytes,
+                            uint64_t(ST.getLocalMemorySize()) + 1);
+}
+
+std::pair<unsigned, unsigned>
+AMDGPUSubtarget::getOccupancyWithWorkGroupSizes(uint32_t LDSBytes,
+                                                const Function &F) const {
+  std::pair<unsigned, unsigned> FlatWorkGroupSizes = getFlatWorkGroupSizes(F);
+  auto [DynMin, DynMax] = getDynamicLDSBytes(F);
+
+  // More LDS per workgroup means fewer workgroups fit on a CU, so the maximum
+  // dynamic request bounds the minimum occupancy and vice versa.
+  return {getOccupancyWithWorkGroupSizes(totalLDSBytes(*this, LDSBytes, DynMax),
+                                         FlatWorkGroupSizes)
+              .first,
+          getOccupancyWithWorkGroupSizes(totalLDSBytes(*this, LDSBytes, DynMin),
+                                         FlatWorkGroupSizes)
+              .second};
+}
+
 std::pair<unsigned, unsigned> AMDGPUSubtarget::getOccupancyWithWorkGroupSizes(
     const MachineFunction &MF) const {
   const auto *MFI = MF.getInfo<SIMachineFunctionInfo>();
@@ -206,11 +284,13 @@ std::pair<unsigned, unsigned>
 AMDGPUSubtarget::getWavesPerEU(const Function &F) const {
   // Default/requested minimum/maximum flat work group sizes.
   std::pair<unsigned, unsigned> FlatWorkGroupSizes = getFlatWorkGroupSizes(F);
-  // Minimum number of bytes allocated in the LDS.
-  unsigned LDSBytes =
+  // Minimum number of bytes allocated in the LDS, statically plus dynamically.
+  unsigned LDSBytes = totalLDSBytes(
+      *this,
       AMDGPU::getIntegerPairAttribute(F, "amdgpu-lds-size", {0, UINT32_MAX},
                                       /*OnlyFirstRequired=*/true)
-          .first;
+          .first,
+      getDynamicLDSBytes(F).first);
   return getWavesPerEU(FlatWorkGroupSizes, LDSBytes, F);
 }
 
