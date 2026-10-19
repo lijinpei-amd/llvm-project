@@ -53,6 +53,12 @@ static cl::opt<bool>
                     cl::desc("Enable register allocation anti-hints."),
                     cl::init(true));
 
+// EXPERIMENT: hint untied MFMA vdst and src2 to the same register.
+static cl::opt<bool>
+    EnableMFMADstSrcCHint("amdgpu-mfma-dst-srcc-hint", cl::Hidden,
+                          cl::desc("Hint MFMA vdst and src2 together."),
+                          cl::init(false));
+
 namespace {
 
 class GCNPreRAOptimizationsImpl {
@@ -318,6 +324,34 @@ bool GCNPreRAOptimizationsImpl::run(MachineFunction &MF) {
     SchedModel.init(&ST);
     AMDGPU::HazardContext HCtx{TII, TRI, MRI, LIS, &ST, &SchedModel};
     AMDGPU::applyAntiHintRules(MF, HCtx);
+  }
+
+  if (EnableMFMADstSrcCHint) {
+    for (MachineBasicBlock &MBB : MF) {
+      for (MachineInstr &MI : MBB) {
+        if (!SIInstrInfo::isMFMA(MI))
+          continue;
+        MachineOperand *Dst = TII->getNamedOperand(MI, AMDGPU::OpName::vdst);
+        MachineOperand *Src2 = TII->getNamedOperand(MI, AMDGPU::OpName::src2);
+        if (!Dst || !Src2 || !Src2->isReg() || Dst->isTied() ||
+            Dst->isEarlyClobber() || Dst->getSubReg() || Src2->getSubReg())
+          continue;
+        Register D = Dst->getReg(), C = Src2->getReg();
+        if (!D.isVirtual() || !C.isVirtual() || D == C ||
+            TRI->getRegSizeInBits(*MRI->getRegClass(D)) !=
+                TRI->getRegSizeInBits(*MRI->getRegClass(C)))
+          continue;
+        // Only hint when src2 dies here; kill flags are unreliable after
+        // scheduling, so query LiveIntervals instead.
+        if (!LIS->hasInterval(C) ||
+            !LIS->getInterval(C).Query(LIS->getInstructionIndex(MI)).isKill())
+          continue;
+        LLVM_DEBUG(dbgs() << "mfma-dc-hint: " << printReg(D, TRI) << " <-> "
+                          << printReg(C, TRI) << '\n');
+        MRI->addRegAllocationHint(D, C);
+        MRI->addRegAllocationHint(C, D);
+      }
+    }
   }
 
   bool Changed = false;
