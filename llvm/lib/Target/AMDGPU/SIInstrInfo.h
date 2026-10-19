@@ -1978,6 +1978,10 @@ namespace AMDGPU {
   LLVM_READONLY
   int32_t getMFMAEarlyClobberOp(uint32_t Opcode);
 
+  /// \returns the tied (MAC) version of an MFMA if it exists.
+  LLVM_READONLY
+  int32_t getMFMAMacOp(uint32_t Opcode);
+
   /// \returns Version of an instruction which uses AGPRs for coupled operands
   /// given an \p Opcode which uses VGPRs for coupled operands.
   LLVM_READONLY

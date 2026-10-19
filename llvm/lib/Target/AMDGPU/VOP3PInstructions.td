@@ -1328,19 +1328,21 @@ multiclass MAIInst<string OpName, string P, SDPatternOperator node = null_frag,
                         MFMATable<0, "VGPR", NAME # "_vgprcd_e64", NAME # "_e64">;
     }
 
-    if NoDstOverlap then {
-      let Constraints = !if(NoDstOverlap, "$vdst = $src2", ""),
-          isConvertibleToThreeAddress = NoDstOverlap,
-          Mnemonic = OpName in {
-        def "_mac_e64" : MAIInst<OpName # "_mac", ProfileAGPR,
-                                 !if(!eq(node, null_frag), null_frag, AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled>), Scaled>,
-                         MFMATable<1, "AGPR", NAME # "_e64", NAME # "_mac_e64">;
+    // Tied form. ISel selects it directly only when vdst and src2 must not
+    // partially overlap. For smaller results it is selected without patterns
+    // (see AMDGPUPrepareAGPRAlloc) to steer vdst into src2's register.
+    defvar NoMacPattern = !or(!not(NoDstOverlap), !eq(node, null_frag));
+    let Constraints = "$vdst = $src2",
+        isConvertibleToThreeAddress = 1,
+        Mnemonic = OpName in {
+      def "_mac_e64" : MAIInst<OpName # "_mac", ProfileAGPR,
+                               !if(NoMacPattern, null_frag, AgprMAIFrag<node, ProfileAGPR.DstVT, HasAbid, Scaled>), Scaled>,
+                       MFMATable<1, "AGPR", NAME # "_e64", NAME # "_mac_e64">;
 
-        let OtherPredicates = [isGFX90APlus] in
-        def _mac_vgprcd_e64 : MAIInst<OpName # "_mac_vgprcd", ProfileVGPR,
-                                      !if(!eq(node, null_frag), null_frag, VgprMAIFrag<node, HasAbid, Scaled>), Scaled>,
-                              MFMATable<1, "VGPR", NAME # "_vgprcd_e64", NAME # "_mac_e64">;
-      }
+      let OtherPredicates = [isGFX90APlus] in
+      def _mac_vgprcd_e64 : MAIInst<OpName # "_mac_vgprcd", ProfileVGPR,
+                                    !if(NoMacPattern, null_frag, VgprMAIFrag<node, HasAbid, Scaled>), Scaled>,
+                            MFMATable<1, "VGPR", NAME # "_vgprcd_e64", NAME # "_mac_e64">;
     }
   } // mayRaiseFPException = 0, ReadsModeReg = 1
 }

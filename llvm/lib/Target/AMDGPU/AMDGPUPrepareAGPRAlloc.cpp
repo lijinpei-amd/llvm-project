@@ -21,10 +21,19 @@
 #include "SIRegisterInfo.h"
 #include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
 
 #define DEBUG_TYPE "amdgpu-prepare-agpr-alloc"
+
+// EXPERIMENT: use the tied (MAC) form for MFMAs without a dst/src2 overlap
+// restriction, so vdst shares src2's register when src2 dies at the MFMA.
+static cl::opt<bool>
+    EnableSmallMFMAMac("amdgpu-mfma-small-mac", cl::Hidden,
+                       cl::desc("Tie vdst to src2 of MFMAs with results of "
+                                "at most 128 bits"),
+                       cl::init(false));
 
 namespace {
 
@@ -34,6 +43,7 @@ private:
   MachineRegisterInfo &MRI;
 
   bool isAV64Imm(const MachineOperand &MO) const;
+  bool tieSmallMFMAs(MachineFunction &MF);
 
 public:
   AMDGPUPrepareAGPRAllocImpl(const GCNSubtarget &ST, MachineRegisterInfo &MRI)
@@ -85,9 +95,62 @@ bool AMDGPUPrepareAGPRAllocImpl::isAV64Imm(const MachineOperand &MO) const {
   return MO.isImm() && TII.isLegalAV64PseudoImm(MO.getImm());
 }
 
+// \returns true if \p Reg, directly or through up to \p Depth virtual
+// register copies, is copied into a physical register.
+static bool reachesPhysRegCopy(Register Reg, const MachineRegisterInfo &MRI,
+                               unsigned Depth = 2) {
+  for (const MachineInstr &UseMI : MRI.use_nodbg_instructions(Reg)) {
+    if (!UseMI.isCopy())
+      continue;
+    Register DstReg = UseMI.getOperand(0).getReg();
+    if (DstReg.isPhysical() ||
+        (Depth && reachesPhysRegCopy(DstReg, MRI, Depth - 1)))
+      return true;
+  }
+  return false;
+}
+
+// Switch untied MFMAs with a register src2 to the tied form. Two-address
+// lowering converts them back when src2 is still live after the MFMA, as it
+// already does for the MAC forms selected for larger results.
+bool AMDGPUPrepareAGPRAllocImpl::tieSmallMFMAs(MachineFunction &MF) {
+  bool Changed = false;
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      if (!SIInstrInfo::isMFMA(MI) || TII.isDGEMM(MI.getOpcode()))
+        continue;
+      int MacOpc = AMDGPU::getMFMAMacOp(MI.getOpcode());
+      if (MacOpc == -1)
+        continue;
+      int DstIdx =
+          AMDGPU::getNamedOperandIdx(MI.getOpcode(), AMDGPU::OpName::vdst);
+      int Src2Idx =
+          AMDGPU::getNamedOperandIdx(MI.getOpcode(), AMDGPU::OpName::src2);
+      const MachineOperand &Dst = MI.getOperand(DstIdx);
+      const MachineOperand &Src2 = MI.getOperand(Src2Idx);
+      // Wider results already select the MAC form unless src2 is an
+      // immediate; their untied form is earlyclobber.
+      if (Dst.isEarlyClobber() || !Src2.isReg() || !Src2.getReg().isVirtual() ||
+          Src2.getSubReg() || Dst.getSubReg())
+        continue;
+      // If the result is copied to a physical register (e.g. a return
+      // value), tying would force a copy that the untied form avoids.
+      if (reachesPhysRegCopy(Dst.getReg(), MRI))
+        continue;
+      LLVM_DEBUG(dbgs() << "tie small MFMA: " << MI);
+      MI.setDesc(TII.get(MacOpc));
+      MI.tieOperands(DstIdx, Src2Idx);
+      Changed = true;
+    }
+  }
+  return Changed;
+}
+
 bool AMDGPUPrepareAGPRAllocImpl::run(MachineFunction &MF) {
+  bool TiedMFMAs = EnableSmallMFMAMac && tieSmallMFMAs(MF);
+
   if (MRI.isReserved(AMDGPU::AGPR0))
-    return false;
+    return TiedMFMAs;
 
   const MCInstrDesc &AVImmPseudo32 = TII.get(AMDGPU::AV_MOV_B32_IMM_PSEUDO);
   const MCInstrDesc &AVImmPseudo64 = TII.get(AMDGPU::AV_MOV_B64_IMM_PSEUDO);
@@ -116,5 +179,5 @@ bool AMDGPUPrepareAGPRAllocImpl::run(MachineFunction &MF) {
     }
   }
 
-  return Changed;
+  return Changed || TiedMFMAs;
 }

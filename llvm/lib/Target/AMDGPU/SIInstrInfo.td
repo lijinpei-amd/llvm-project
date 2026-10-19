@@ -3567,6 +3567,15 @@ def getMFMAEarlyClobberOp : InstrMapping {
   let ValueCols = [["0"]];
 }
 
+// Inverse of getMFMAEarlyClobberOp: map an untied MFMA to its tied form.
+def getMFMAMacOp : InstrMapping {
+  let FilterClass = "MFMATable";
+  let RowFields = ["FMAOp"];
+  let ColFields = ["IsMac"];
+  let KeyCol = ["0"];
+  let ValueCols = [["1"]];
+}
+
 // Map from an instruction using VGPRs to one using AGPRs.
 def getAGPRFormOp : InstrMapping {
   let FilterClass = "AGPRFormTable";
