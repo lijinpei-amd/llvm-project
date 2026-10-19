@@ -110,6 +110,28 @@ static bool reachesPhysRegCopy(Register Reg, const MachineRegisterInfo &MRI,
   return false;
 }
 
+// \returns true if a value that \p Reg is built from, through COPYs or as a
+// REG_SEQUENCE input (up to \p Depth levels), is also used elsewhere. The
+// coalescer is likely to merge \p Reg with that value, which then stays live
+// past the MFMA, so a tie would cost a copy.
+static bool sourceHasOtherUses(Register Reg, const MachineRegisterInfo &MRI,
+                               unsigned Depth = 2) {
+  const MachineInstr *Def = MRI.getUniqueVRegDef(Reg);
+  if (!Def || (!Def->isCopy() && !Def->isRegSequence()))
+    return false;
+  for (const MachineOperand &MO : Def->uses()) {
+    if (!MO.isReg() || !MO.getReg().isVirtual())
+      continue;
+    Register SrcReg = MO.getReg();
+    if (any_of(MRI.use_nodbg_instructions(SrcReg),
+               [Def](const MachineInstr &UseMI) { return &UseMI != Def; }))
+      return true;
+    if (Depth && sourceHasOtherUses(SrcReg, MRI, Depth - 1))
+      return true;
+  }
+  return false;
+}
+
 // Switch untied MFMAs with a register src2 to the tied form. Two-address
 // lowering converts them back when src2 is still live after the MFMA, as it
 // already does for the MAC forms selected for larger results.
@@ -136,6 +158,10 @@ bool AMDGPUPrepareAGPRAllocImpl::tieSmallMFMAs(MachineFunction &MF) {
       // If the result is copied to a physical register (e.g. a return
       // value), tying would force a copy that the untied form avoids.
       if (reachesPhysRegCopy(Dst.getReg(), MRI))
+        continue;
+      // If src2 is a copy or part of a value that is used elsewhere, the
+      // coalescer will likely keep that value live past the MFMA.
+      if (sourceHasOtherUses(Src2.getReg(), MRI))
         continue;
       LLVM_DEBUG(dbgs() << "tie small MFMA: " << MI);
       MI.setDesc(TII.get(MacOpc));
