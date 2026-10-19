@@ -3464,16 +3464,12 @@ int GCNHazardRecognizer::getMFMAOverlappedSrcCWaitStates(
   if (TII.isXDL(*Reader) && !TII.isXDL(*Writer))
     return 0;
 
-  switch (Writer->getOpcode()) {
+  switch (getMFMANonMacAGPRFormOp(Writer->getOpcode())) {
   case AMDGPU::V_MFMA_F64_16X16X4F64_e64:
-  case AMDGPU::V_MFMA_F64_16X16X4F64_vgprcd_e64:
-  case AMDGPU::V_MFMA_F64_16X16X4F64_mac_e64:
-  case AMDGPU::V_MFMA_F64_16X16X4F64_mac_vgprcd_e64:
     return ST.hasGFX950Insts()
                ? GFX950_DMFMA16x16WritesVGPROverlappedSrcCWaitStates
                : DMFMA16x16WritesVGPROverlappedSrcCWaitStates;
   case AMDGPU::V_MFMA_F64_4X4X4F64_e64:
-  case AMDGPU::V_MFMA_F64_4X4X4F64_vgprcd_e64:
     return DMFMA4x4WritesVGPROverlappedSrcCWaitStates;
   default:
     break;
@@ -3529,10 +3525,8 @@ int GCNHazardRecognizer::getMFMAReadWaitStates(const MachineInstr &Consumer,
         (!ST.hasGFX940Insts() && SIInstrInfo::isDGEMM(Opc1))) {
       NeedWaitStates = 0;
     } else if (FullReg) {
-      if ((Opc == AMDGPU::V_MFMA_F64_4X4X4F64_e64 ||
-           Opc == AMDGPU::V_MFMA_F64_4X4X4F64_vgprcd_e64) &&
-          (Opc1 == AMDGPU::V_MFMA_F64_4X4X4F64_e64 ||
-           Opc1 == AMDGPU::V_MFMA_F64_4X4X4F64_vgprcd_e64))
+      if (getMFMANonMacAGPRFormOp(Opc) == AMDGPU::V_MFMA_F64_4X4X4F64_e64 &&
+          getMFMANonMacAGPRFormOp(Opc1) == AMDGPU::V_MFMA_F64_4X4X4F64_e64)
         NeedWaitStates = DMFMA4x4WritesVGPRFullSrcCWaitStates;
       else if (ST.hasGFX940Insts() &&
                TSchedModel.computeInstrLatency(&Producer) == 2)
@@ -3550,18 +3544,14 @@ int GCNHazardRecognizer::getMFMAReadWaitStates(const MachineInstr &Consumer,
       NeedWaitStates = getMFMAOverlappedSrcCWaitStates(&Consumer, &Producer);
     }
   } else {
-    switch (Opc1) {
+    switch (getMFMANonMacAGPRFormOp(Opc1)) {
     case AMDGPU::V_MFMA_F64_16X16X4F64_e64:
-    case AMDGPU::V_MFMA_F64_16X16X4F64_vgprcd_e64:
-    case AMDGPU::V_MFMA_F64_16X16X4F64_mac_e64:
-    case AMDGPU::V_MFMA_F64_16X16X4F64_mac_vgprcd_e64:
       NeedWaitStates =
           ST.hasGFX950Insts()
               ? GFX950_DMFMA16x16WritesVGPROverlappedMFMASrcABWaitStates
               : DMFMA16x16WritesVGPROverlappedMFMASrcABWaitStates;
       break;
     case AMDGPU::V_MFMA_F64_4X4X4F64_e64:
-    case AMDGPU::V_MFMA_F64_4X4X4F64_vgprcd_e64:
       NeedWaitStates = DMFMA4x4WritesVGPROverlappedMFMASrcABWaitStates;
       break;
     default:

@@ -117,7 +117,7 @@ bool AMDGPUPrepareAGPRAllocImpl::tieSmallMFMAs(MachineFunction &MF) {
   bool Changed = false;
   for (MachineBasicBlock &MBB : MF) {
     for (MachineInstr &MI : MBB) {
-      if (!SIInstrInfo::isMFMA(MI) || TII.isDGEMM(MI.getOpcode()))
+      if (!SIInstrInfo::isMFMA(MI))
         continue;
       int MacOpc = AMDGPU::getMFMAMacOp(MI.getOpcode());
       if (MacOpc == -1)
