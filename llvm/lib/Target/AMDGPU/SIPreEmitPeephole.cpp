@@ -67,9 +67,10 @@ private:
   bool removeRedundantModeWrites(MachineBasicBlock &SrcMBB) const;
   // Creates a list of packed instructions following an MFMA that are suitable
   // for unpacking, i.e. that would still stall within \p UnpackWindow cycles.
+  // The first \p FreeSALUCycles cycles of SALU after the MFMA are free.
   void collectUnpackingCandidates(MachineInstr &BeginMI,
                                   SetVector<MachineInstr *> &InstrsToUnpack,
-                                  int UnpackWindow);
+                                  int UnpackWindow, unsigned FreeSALUCycles);
   // v_pk_fma_f32 v[0:1], v[0:1], v[2:3], v[2:3] op_sel:[1,1,1]
   // op_sel_hi:[0,0,0]
   // ==>
@@ -722,7 +723,7 @@ void SIPreEmitPeephole::addOperandAndMods(MachineInstrBuilder &NewMI,
 
 void SIPreEmitPeephole::collectUnpackingCandidates(
     MachineInstr &BeginMI, SetVector<MachineInstr *> &InstrsToUnpack,
-    int UnpackWindow) {
+    int UnpackWindow, unsigned FreeSALUCycles) {
   auto *BB = BeginMI.getParent();
   auto E = BB->end();
   int TotalCyclesBetweenCandidates = 0;
@@ -748,6 +749,14 @@ void SIPreEmitPeephole::collectUnpackingCandidates(
     unsigned Latency = std::max<unsigned>(
         SchedModel.getWriteProcResBegin(InstrSchedClassDesc)->ReleaseAtCycle,
         SIInstrInfo::getNumWaitStates(Instr));
+    // SALU right after the MFMA issues while it holds VALU off.
+    if (SIInstrInfo::isSALU(Instr) && !SIInstrInfo::isSOPP(Instr)) {
+      unsigned Free = std::min(Latency, FreeSALUCycles);
+      FreeSALUCycles -= Free;
+      Latency -= Free;
+    } else {
+      FreeSALUCycles = 0;
+    }
     TotalCyclesBetweenCandidates += Latency;
 
     if (TotalCyclesBetweenCandidates >= UnpackWindow)
@@ -935,7 +944,7 @@ bool SIPreEmitPeephole::run(MachineFunction &MF, MachineLoopInfo *LoopInfo) {
       unsigned VALUCycle = AMDGPU::getVALUIssueCycle(MI, *TII);
       assert(PackedCycle >= VALUCycle && "packed VALU issues before VALU");
       collectUnpackingCandidates(MI, InstrsToUnpack,
-                                 PackedCycle - VALUCycle + 1);
+                                 PackedCycle - VALUCycle + 1, VALUCycle - 1);
     }
     for (MachineInstr *MI : InstrsToUnpack) {
       performF32Unpacking(*MI);
