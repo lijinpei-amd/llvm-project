@@ -227,6 +227,68 @@ endif:
   ret void
 }
 
+; Merge exceeds MaxAsyncMarkers, then one more marker before the wait
+
+; CHECK-LABEL: max_when_merged_then_marked:
+; CHECK: ; wait_asyncmark(17)
+; CHECK-NEXT: ds_read_b32
+
+define void @max_when_merged_then_marked(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 %n, ptr addrspace(1) %out) {
+entry:
+  %cmp = icmp slt i32 0, %n
+  br i1 %cmp, label %then, label %else
+
+then:
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  br label %endif
+
+else:
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  br label %endif
+
+endif:
+  call void @llvm.amdgcn.global.load.async.lds(ptr addrspace(1) %in, ptr addrspace(3) %lds, i32 4, i32 0, i32 0)
+  call void @llvm.amdgcn.asyncmark()
+  call void @llvm.amdgcn.wait.asyncmark(i16 17)
+  %lds_val = load i32, ptr addrspace(3) %lds
+  store i32 %lds_val, ptr addrspace(1) %out
+  ret void
+}
+
 ; Straightline exceeds MaxAsyncMarkers
 
 ; CHECK-LABEL: no_max_in_straightline:
