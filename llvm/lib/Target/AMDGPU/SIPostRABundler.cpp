@@ -188,7 +188,8 @@ bool SIPostRABundler::run(MachineFunction &MF) {
             Defs.insert(I->defs().begin()->getReg());
           ++ClauseLength;
         } else if (!I->isMetaInstruction() ||
-                   I->getOpcode() == AMDGPU::SCHED_BARRIER) {
+                   I->getOpcode() == AMDGPU::SCHED_BARRIER ||
+                   I->getOpcode() == AMDGPU::SCHED_ORDER_BARRIER) {
           // SCHED_BARRIER is not bundled to be honored by scheduler later.
           // Allow other meta instructions in between bundle candidates, but do
           // not start or end a bundle on one.

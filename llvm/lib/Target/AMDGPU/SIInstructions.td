@@ -554,6 +554,21 @@ def SCHED_BARRIER : SPseudoInstSI<(outs), (ins i32imm:$mask),
   let isMeta = 1;
 }
 
+def SCHED_ORDER_BARRIER : SPseudoInstSI<(outs),
+  (ins i32imm:$before_mask, i32imm:$after_mask),
+  [(int_amdgcn_sched_order_barrier (i32 timm:$before_mask),
+                                   (i32 timm:$after_mask))]> {
+  let SchedRW = [];
+  let hasNoSchedulingInfo = 1;
+  let hasSideEffects = 1;
+  let mayLoad = 0;
+  let mayStore = 0;
+  let isConvergent = 1;
+  let FixedSize = 1;
+  let Size = 0;
+  let isMeta = 1;
+}
+
 def SCHED_GROUP_BARRIER : SPseudoInstSI<
   (outs),
   (ins i32imm:$mask, i32imm:$size, i32imm:$syncid),

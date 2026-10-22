@@ -384,6 +384,17 @@ def int_amdgcn_sched_barrier : ClangBuiltin<"__builtin_amdgcn_sched_barrier">,
   Intrinsic<[], [llvm_i32_ty], [ImmArg<ArgIndex<0>>, IntrNoMem, IntrHasSideEffects, IntrConvergent,
                                 IntrWillReturn, IntrNoCallback, IntrNoFree]>;
 
+// Orders instruction kinds around this point without otherwise constraining
+// scheduling. Instructions before it in program order whose kind is in the
+// first mask are scheduled before it; instructions after it whose kind is in
+// the second mask are scheduled after it. Both masks use the sched_barrier
+// encoding above, except that VMEM read excludes LDSDMA.
+def int_amdgcn_sched_order_barrier :
+  Intrinsic<[], [llvm_i32_ty, llvm_i32_ty],
+            [ImmArg<ArgIndex<0>>, ImmArg<ArgIndex<1>>, IntrNoMem,
+             IntrHasSideEffects, IntrConvergent, IntrWillReturn,
+             IntrNoCallback, IntrNoFree]>;
+
 // The first parameter is a mask that determines the types of instructions that
 // you would like to synchronize around and add to a scheduling group. The
 // values of the mask are defined above for sched_barrier. These instructions

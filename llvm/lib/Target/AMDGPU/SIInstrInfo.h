@@ -1259,6 +1259,7 @@ public:
 
   bool isIGLP(unsigned Opcode) const {
     return Opcode == AMDGPU::SCHED_BARRIER ||
+           Opcode == AMDGPU::SCHED_ORDER_BARRIER ||
            Opcode == AMDGPU::SCHED_GROUP_BARRIER || Opcode == AMDGPU::IGLP_OPT;
   }
 

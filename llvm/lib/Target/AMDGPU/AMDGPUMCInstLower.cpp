@@ -398,6 +398,15 @@ void AMDGPUAsmPrinter::emitInstruction(const MachineInstr *MI) {
       return;
     }
 
+    if (MI->getOpcode() == AMDGPU::SCHED_ORDER_BARRIER) {
+      if (isVerbose())
+        OutStreamer->emitRawComment(
+            " sched_order_barrier before(" +
+            Twine::utohexstr(MI->getOperand(0).getImm()) + ") after(" +
+            Twine::utohexstr(MI->getOperand(1).getImm()) + ")");
+      return;
+    }
+
     if (MI->getOpcode() == AMDGPU::SCHED_GROUP_BARRIER) {
       if (isVerbose()) {
         std::string HexString;

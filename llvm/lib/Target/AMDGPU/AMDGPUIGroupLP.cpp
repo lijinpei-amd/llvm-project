@@ -2461,6 +2461,9 @@ private:
   // Add DAG edges that enforce SCHED_BARRIER ordering.
   void addSchedBarrierEdges(SUnit &SU);
 
+  // Add DAG edges that enforce SCHED_ORDER_BARRIER ordering.
+  void addSchedOrderBarrierEdges(SUnit &SU);
+
   // Use a SCHED_BARRIER's mask to identify instruction SchedGroups that should
   // not be reordered accross the SCHED_BARRIER. This is used for the base
   // SCHED_BARRIER, and not SCHED_GROUP_BARRIER. The difference is that
@@ -2723,6 +2726,8 @@ void IGroupLPDAGMutation::apply(ScheduleDAGInstrs *DAGInstrs) {
     if (Opc == AMDGPU::SCHED_BARRIER) {
       addSchedBarrierEdges(*R);
       FoundSB = true;
+    } else if (Opc == AMDGPU::SCHED_ORDER_BARRIER) {
+      addSchedOrderBarrierEdges(*R);
     } else if (Opc == AMDGPU::SCHED_GROUP_BARRIER) {
       initSchedGroupBarrierPipelineStage(R);
       FoundSB = true;
@@ -2761,6 +2766,23 @@ void IGroupLPDAGMutation::addSchedBarrierEdges(SUnit &SchedBarrier) {
       SchedBarrier,
       (function_ref<bool(const SUnit *A, const SUnit *B)>)[](
           const SUnit *A, const SUnit *B) { return A->NodeNum > B->NodeNum; });
+}
+
+void IGroupLPDAGMutation::addSchedOrderBarrierEdges(SUnit &Barrier) {
+  MachineInstr &MI = *Barrier.getInstr();
+  assert(MI.getOpcode() == AMDGPU::SCHED_ORDER_BARRIER);
+  SchedGroup Before((SchedGroupMask)MI.getOperand(0).getImm(), std::nullopt,
+                    DAG, TII);
+  SchedGroup After((SchedGroupMask)MI.getOperand(1).getImm(), std::nullopt,
+                   DAG, TII);
+  for (SUnit &SU : DAG->SUnits) {
+    if (SU.NodeNum < Barrier.NodeNum && Before.canAddSU(SU))
+      Before.add(SU);
+    else if (SU.NodeNum > Barrier.NodeNum && After.canAddSU(SU))
+      After.add(SU);
+  }
+  Before.link(Barrier, /*MakePred=*/false);
+  After.link(Barrier, /*MakePred=*/true);
 }
 
 SchedGroupMask
