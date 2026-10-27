@@ -22,6 +22,16 @@ using namespace llvm::AMDGPU;
 
 #define DEBUG_TYPE "machine-scheduler"
 
+static cl::opt<bool> CoexecMemPipeDep(
+    "amdgpu-coexec-mempipe-dep", cl::Hidden, cl::init(false),
+    cl::desc("Prefer co-exec candidates that enable the next LDS DMA"));
+
+static cl::opt<unsigned> CoexecMemPipeDepThreshold(
+    "amdgpu-coexec-mempipe-dep-threshold", cl::Hidden, cl::init(UINT_MAX),
+    cl::desc("Apply -amdgpu-coexec-mempipe-dep only while fewer than this "
+             "many LDS DMAs are released (all predecessors scheduled) but not "
+             "yet scheduled"));
+
 static cl::opt<CarriedLatency> BlockCarriedLatency(
     "amdgpu-block-carried-latency", cl::Hidden, cl::init(CarriedLatency::Off),
     cl::desc("Estimate block-carried latency and include it in the effective "
@@ -590,6 +600,8 @@ void CandidateHeuristics::updateForScheduling(SUnit *SU) {
   HardwareUnitInfo *HWUI = getHWUIFromFlavor(classifyFlavor(*MI, *SII));
   assert(HWUI);
   HWUI->markScheduled(SU, getHWUICyclesForMI(MI));
+  // SU's successors are released after this, so recount on next use.
+  NumReleasedDMAs.reset();
 }
 
 void CandidateHeuristics::initialize(ScheduleDAGMI *SchedDAG,
@@ -621,6 +633,57 @@ void CandidateHeuristics::initialize(ScheduleDAGMI *SchedDAG,
       DefaultBufferSizes::DS);
 
   collectRegionSummary();
+
+  // Left empty when -amdgpu-coexec-mempipe-dep is off, which disables
+  // tryMemoryPipelineDependency without reading the option per comparison.
+  RegionDMAs.clear();
+  NextDMAIdx = 0;
+  NumReleasedDMAs.reset();
+  MemPipeDepThreshold = CoexecMemPipeDepThreshold;
+  if (CoexecMemPipeDep)
+    for (SUnit &SU : DAG->SUnits)
+      if (classifyFlavor(*SU.getInstr(), *SII) == InstructionFlavor::DMA)
+        RegionDMAs.push_back(&SU);
+}
+
+SUnit *CandidateHeuristics::getNextUnreleasedDMA() {
+  // Skip DMAs that are already released (all predecessors scheduled), which
+  // includes scheduled ones. NumPredsLeft only decreases, so the cursor never
+  // needs to move back.
+  while (NextDMAIdx < RegionDMAs.size() &&
+         RegionDMAs[NextDMAIdx]->NumPredsLeft == 0)
+    ++NextDMAIdx;
+  return NextDMAIdx < RegionDMAs.size() ? RegionDMAs[NextDMAIdx] : nullptr;
+}
+
+unsigned CandidateHeuristics::getNumReleasedDMAs() {
+  if (!NumReleasedDMAs)
+    NumReleasedDMAs = count_if(RegionDMAs, [](const SUnit *SU) {
+      return !SU->isScheduled && SU->NumPredsLeft == 0;
+    });
+  return *NumReleasedDMAs;
+}
+
+bool CandidateHeuristics::tryMemoryPipelineDependency(
+    GenericSchedulerBase::SchedCandidate &TryCand,
+    GenericSchedulerBase::SchedCandidate &Cand) {
+  SUnit *Target = getNextUnreleasedDMA();
+  if (!Target || getNumReleasedDMAs() >= MemPipeDepThreshold)
+    return false;
+
+  bool CandEnables = DAG->IsReachable(Target, Cand.SU);
+  bool TryCandEnables = DAG->IsReachable(Target, TryCand.SU);
+  if (CandEnables == TryCandEnables)
+    return false;
+
+  if (CandEnables) {
+    if (Cand.Reason > GenericSchedulerBase::RegCritical)
+      Cand.Reason = GenericSchedulerBase::RegCritical;
+    return true;
+  }
+
+  TryCand.Reason = GenericSchedulerBase::RegCritical;
+  return true;
 }
 
 unsigned CandidateHeuristics::getCarriedLatency(SUnit *SU) {
@@ -1335,6 +1398,11 @@ bool AMDGPUCoExecSchedStrategy::tryCandidateCoexec(SchedCandidate &Cand,
 
     if (Heurs.tryMemoryPipeline(TryCand, Cand, *Zone)) {
       LastAMDGPUReason = AMDGPUSchedReason::MemoryPipeline;
+      return TryCand.Reason != NoCand;
+    }
+
+    if (Heurs.tryMemoryPipelineDependency(TryCand, Cand)) {
+      LastAMDGPUReason = AMDGPUSchedReason::MemoryPipelineDep;
       return TryCand.Reason != NoCand;
     }
 
