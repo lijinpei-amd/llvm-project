@@ -248,6 +248,7 @@ class FLAT_Load_Pseudo<
   let mayLoad = 1;
   let has_saddr = HasSaddr;
   let enabled_saddr = EnableSaddr;
+  let SchedRW = !if(is_flat_global, [WriteVMEMLoad], [WriteVMEM]);
 
   let Constraints = !if(HasTiedOutput, "$vdst = $vdst_in", "");
 }
@@ -350,6 +351,7 @@ class FLAT_Global_Load_AddTid_Pseudo <string opName, RegisterOperand regClass,
   let has_data = 0;
   let mayLoad = 1;
   let has_vaddr = 0;
+  let SchedRW = [WriteVMEMLoad];
   let has_saddr = 1;
   let enabled_saddr = EnableSaddr;
 
@@ -417,7 +419,7 @@ class FLAT_Global_Load_LDS_PseudoImpl <string opName, bit EnableSaddr = 0, bit I
   let Uses = !if(IsGFX9GFX10Async, [M0, EXEC, AsyncMarker],
                   !if(IsAsync, [EXEC, ASYNCcnt, AsyncMarker], [M0, EXEC]));
   let Defs = !if(IsAsync, [ASYNCcnt], []);
-  let SchedRW = [WriteVMEM, WriteLDS];
+  let SchedRW = [WriteVMEMLoad, WriteLDS];
 }
 
 // Emits the non-async pseudo pair and, when IsGFX9GFX10Async, its async pair.
