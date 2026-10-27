@@ -33,6 +33,7 @@ enum class AMDGPUSchedReason : uint8_t {
   None,
   Stall,
   MemoryPipeline,
+  MemoryPipelineDep,   // tryMemoryPipelineDependency enabled the next LDS DMA
   CritResourceBalance, // tryCriticalResource chose based on resource pressure
   CritResourceDep,     // tryCriticalResourceDependency chose based on enabling
   NUM_REASONS
@@ -46,6 +47,8 @@ inline StringRef getReasonName(AMDGPUSchedReason R) {
     return "Stall";
   case AMDGPUSchedReason::MemoryPipeline:
     return "MemoryPipeline";
+  case AMDGPUSchedReason::MemoryPipelineDep:
+    return "MemoryPipelineDep";
   case AMDGPUSchedReason::CritResourceBalance:
     return "CritResource";
   case AMDGPUSchedReason::CritResourceDep:
@@ -231,6 +234,8 @@ protected:
   const TargetSchedModel *SchedModel;
   const MachineLoopInfo *MLI;
   SmallVector<HardwareUnitInfo, 8> HWUInfo;
+  SmallVector<SUnit *, 16> RegionDMAs;
+  unsigned NextDMAIdx = 0;
 
   AMDGPU::CarriedLatency RegionCarriedLatency = AMDGPU::CarriedLatency::Off;
   DenseMap<MachineInstr *, unsigned> CarriedLatencies;
@@ -292,6 +297,12 @@ public:
   bool tryMemoryPipeline(GenericSchedulerBase::SchedCandidate &TryCand,
                          GenericSchedulerBase::SchedCandidate &Cand,
                          SchedBoundary &Zone);
+
+  SUnit *getNextPendingDMA();
+
+  bool
+  tryMemoryPipelineDependency(GenericSchedulerBase::SchedCandidate &TryCand,
+                              GenericSchedulerBase::SchedCandidate &Cand);
 
   /// Check for critical resource consumption. Prefer the candidate that uses
   /// the most prioritized HardwareUnit. If both candidates use the same

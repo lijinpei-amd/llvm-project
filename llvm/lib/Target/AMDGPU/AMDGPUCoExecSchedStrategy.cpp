@@ -22,6 +22,21 @@ using namespace llvm::AMDGPU;
 
 #define DEBUG_TYPE "machine-scheduler"
 
+static cl::opt<bool> CoexecMemPipeDep(
+    "amdgpu-coexec-mempipe-dep", cl::Hidden, cl::init(false),
+    cl::desc("Prefer co-exec candidates that enable the next LDS DMA"));
+
+enum class MemPipeDepScope { All, Prefix };
+
+static cl::opt<MemPipeDepScope> CoexecMemPipeDepScope(
+    "amdgpu-coexec-mempipe-dep-scope", cl::Hidden,
+    cl::init(MemPipeDepScope::All),
+    cl::desc("LDS DMAs targeted by -amdgpu-coexec-mempipe-dep"),
+    cl::values(clEnumValN(MemPipeDepScope::All, "all",
+                          "Every LDS DMA in the region"),
+               clEnumValN(MemPipeDepScope::Prefix, "prefix",
+                          "LDS DMAs before the first MFMA in original order")));
+
 static cl::opt<CarriedLatency> BlockCarriedLatency(
     "amdgpu-block-carried-latency", cl::Hidden, cl::init(CarriedLatency::Off),
     cl::desc("Estimate block-carried latency and include it in the effective "
@@ -621,6 +636,48 @@ void CandidateHeuristics::initialize(ScheduleDAGMI *SchedDAG,
       DefaultBufferSizes::DS);
 
   collectRegionSummary();
+
+  RegionDMAs.clear();
+  NextDMAIdx = 0;
+  for (SUnit &SU : DAG->SUnits) {
+    InstructionFlavor Flavor = classifyFlavor(*SU.getInstr(), *SII);
+    if (CoexecMemPipeDepScope == MemPipeDepScope::Prefix &&
+        Flavor == InstructionFlavor::WMMA)
+      break;
+    if (Flavor == InstructionFlavor::DMA)
+      RegionDMAs.push_back(&SU);
+  }
+}
+
+SUnit *CandidateHeuristics::getNextPendingDMA() {
+  while (NextDMAIdx < RegionDMAs.size() && RegionDMAs[NextDMAIdx]->isScheduled)
+    ++NextDMAIdx;
+  return NextDMAIdx < RegionDMAs.size() ? RegionDMAs[NextDMAIdx] : nullptr;
+}
+
+bool CandidateHeuristics::tryMemoryPipelineDependency(
+    GenericSchedulerBase::SchedCandidate &TryCand,
+    GenericSchedulerBase::SchedCandidate &Cand) {
+  SUnit *Target = getNextPendingDMA();
+  if (!Target)
+    return false;
+
+  auto Enables = [&](SUnit *SU) {
+    return SU == Target || DAG->IsReachable(Target, SU);
+  };
+  bool CandEnables = Enables(Cand.SU);
+  bool TryCandEnables = Enables(TryCand.SU);
+  if (CandEnables == TryCandEnables)
+    return false;
+
+  if (CandEnables) {
+    if (Cand.Reason > GenericSchedulerBase::RegCritical)
+      Cand.Reason = GenericSchedulerBase::RegCritical;
+    return true;
+  }
+
+  TryCand.Reason = GenericSchedulerBase::RegCritical;
+  return true;
 }
 
 unsigned CandidateHeuristics::getCarriedLatency(SUnit *SU) {
@@ -1335,6 +1392,11 @@ bool AMDGPUCoExecSchedStrategy::tryCandidateCoexec(SchedCandidate &Cand,
 
     if (Heurs.tryMemoryPipeline(TryCand, Cand, *Zone)) {
       LastAMDGPUReason = AMDGPUSchedReason::MemoryPipeline;
+      return TryCand.Reason != NoCand;
+    }
+
+    if (CoexecMemPipeDep && Heurs.tryMemoryPipelineDependency(TryCand, Cand)) {
+      LastAMDGPUReason = AMDGPUSchedReason::MemoryPipelineDep;
       return TryCand.Reason != NoCand;
     }
 
