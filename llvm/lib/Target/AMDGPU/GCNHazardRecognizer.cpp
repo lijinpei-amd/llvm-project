@@ -280,7 +280,7 @@ void GCNHazardRecognizer::updateMultiCycleVALUState(const MachineInstr &MI) {
   if (!hasCoExecWindowModel())
     return;
   // Multi-cycle VALU (CVT, etc.) blocks subsequent VALU for repeat rate cycles.
-  if (!SIInstrInfo::isVALU(MI, /*AllowLDSDMA=*/true))
+  if (!SIInstrInfo::isVALU(MI, /*AllowLDSDMA=*/false))
     return;
 
   // Skip WMMA, MFMA, and TRANS - they have their own tracking.
