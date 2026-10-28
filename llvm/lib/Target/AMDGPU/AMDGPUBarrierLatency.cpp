@@ -47,6 +47,19 @@ static cl::opt<unsigned> AsyncMarkWaitLatencyValueOpt(
              "DMA's scheduling model latency)"),
     cl::init(0), cl::Hidden);
 
+static cl::opt<bool> LDSReadNeedOrderOpt(
+    "amdgpu-lds-read-need-order",
+    cl::desc("Order a DS read before another DS read when its MFMA users are a "
+             "strict superset of the other's (it is needed no later)"),
+    cl::init(false), cl::Hidden);
+
+static cl::opt<unsigned> LDSReadNeedOrderFanOutOpt(
+    "amdgpu-lds-read-need-order-fanout",
+    cl::desc("With -amdgpu-lds-read-need-order, also order a DS read first when "
+             "it feeds at least this many times as many MFMAs as another DS "
+             "read sharing an MFMA with it (0: off)"),
+    cl::init(0), cl::Hidden);
+
 static cl::opt<bool> AsyncMarkExitLatencyMixedOrStagedOpt(
     "amdgpu-asyncmark-exit-latency-mixed-or-staged",
     cl::desc("Apply -amdgpu-asyncmark-exit-latency only in regions that also "
@@ -120,8 +133,52 @@ void setLatencyForEdge(SDep &PredDep, SUnit &SU, unsigned Latency) {
   SU.setDepthDirty();
 }
 
+static void addLDSReadNeedOrder(ScheduleDAGInstrs *DAG) {
+  // MFMA users of each DS read, as bit sets over the region's MFMAs.
+  DenseMap<const SUnit *, unsigned> MFMAIndex;
+  for (SUnit &SU : DAG->SUnits)
+    if (SIInstrInfo::isMFMAorWMMA(*SU.getInstr()))
+      MFMAIndex[&SU] = MFMAIndex.size();
+  if (MFMAIndex.size() < 2)
+    return;
+  SmallVector<std::pair<SUnit *, BitVector>, 32> Reads;
+  for (SUnit &SU : DAG->SUnits) {
+    const MachineInstr &MI = *SU.getInstr();
+    if (!SIInstrInfo::isDS(MI) || !MI.mayLoad() || MI.mayStore())
+      continue;
+    BitVector Users(MFMAIndex.size());
+    for (const SDep &D : SU.Succs)
+      if (D.getKind() == SDep::Data)
+        if (auto It = MFMAIndex.find(D.getSUnit()); It != MFMAIndex.end())
+          Users.set(It->second);
+    if (Users.any())
+      Reads.emplace_back(&SU, std::move(Users));
+  }
+  for (auto &[X, UX] : Reads) {
+    for (auto &[Y, UY] : Reads) {
+      if (X == Y || UX.count() <= UY.count())
+        continue;
+      // X is needed no later than Y if every MFMA that reads Y also reads X.
+      // With -amdgpu-lds-read-need-order-fanout=K, also order X first when it
+      // feeds at least K times as many MFMAs as Y and they share an MFMA.
+      BitVector Common = UY;
+      Common &= UX;
+      bool Superset = Common == UY;
+      bool FanOut = LDSReadNeedOrderFanOutOpt && Common.any() &&
+                    UX.count() >= LDSReadNeedOrderFanOutOpt * UY.count();
+      if (!Superset && !FanOut)
+        continue;
+      if (llvm::any_of(Y->Preds, [&](const SDep &D) { return D.getSUnit() == X; }))
+        continue;
+      DAG->addEdge(Y, SDep(X, SDep::Artificial));
+    }
+  }
+}
+
 void BarrierLatency::apply(ScheduleDAGInstrs *DAG) {
   const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(DAG->TII);
+  if (LDSReadNeedOrderOpt)
+    addLDSReadNeedOrder(DAG);
   constexpr unsigned FenceLatency = 2000;
   const unsigned BarrierSignalWaitLatency = BarrierSignalWaitLatencyOpt;
   SmallVector<SUnit *, 8> RegionTDM;
