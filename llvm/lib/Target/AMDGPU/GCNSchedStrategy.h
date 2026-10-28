@@ -80,6 +80,19 @@ protected:
   bool tryPendingCandidate(SchedCandidate &Cand, SchedCandidate &TryCand,
                            SchedBoundary *Zone) const;
 
+  /// Bottom-up, prefer any candidate over an async LDS DMA, so DMAs are issued
+  /// as early as their operands allow instead of being sunk to the bottom by
+  /// the register-pressure heuristics (a DMA defines no VGPR).
+  bool tryDeferAsyncLDSDMA(SchedCandidate &Cand, SchedCandidate &TryCand,
+                           SchedBoundary *Zone) const;
+
+  bool tryCandidate(SchedCandidate &Cand, SchedCandidate &TryCand,
+                    SchedBoundary *Zone) const override;
+
+  /// Async LDS DMAs of the region that no WAIT_ASYNCMARK of the region
+  /// retires (indexed by NodeNum).
+  BitVector UnretiredAsyncDMAs;
+
   void printCandidateDecision(const SchedCandidate &Current,
                               const SchedCandidate &Preferred);
 
