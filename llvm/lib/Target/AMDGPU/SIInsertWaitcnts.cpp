@@ -55,12 +55,58 @@ static cl::opt<bool> ForceEmitZeroLoadFlag(
     cl::desc("Force all waitcnt load counters to wait until 0"),
     cl::init(false), cl::Hidden);
 
+static cl::opt<bool> PackedF32HalfUses(
+    "amdgpu-waitcnt-packed-f32-half-uses",
+    cl::desc("For packed F32 VOP3P sources whose op_sel/op_sel_hi read only "
+             "one 32-bit half, wait only for that half"),
+    cl::init(true), cl::Hidden);
+
 static cl::opt<bool> AsyncMarkPreheaderFlush(
     "amdgpu-waitcnt-asyncmark-preheader-flush",
     cl::desc("Flush vmem counters in the preheader of a loop that contains a "
              "WAIT_ASYNCMARK, so the loop's async-mark waits only cover the "
              "back edge"),
     cl::init(true), cl::Hidden);
+
+// If Op is a 64-bit source of a packed F32 VOP3P instruction whose op_sel and
+// op_sel_hi both select the same 32-bit half, return that half; otherwise
+// return Reg unchanged.
+static MCRegister getReadHalfOfPackedF32Source(const MachineInstr &MI,
+                                               const MachineOperand &Op,
+                                               MCRegister Reg,
+                                               const SIRegisterInfo &TRI) {
+  if (!PackedF32HalfUses || !Op.isUse())
+    return Reg;
+  switch (MI.getOpcode()) {
+  case AMDGPU::V_PK_MUL_F32:
+  case AMDGPU::V_PK_ADD_F32:
+  case AMDGPU::V_PK_FMA_F32:
+    break;
+  default:
+    return Reg;
+  }
+  const AMDGPU::OpName Srcs[] = {AMDGPU::OpName::src0, AMDGPU::OpName::src1,
+                                 AMDGPU::OpName::src2};
+  const AMDGPU::OpName Mods[] = {AMDGPU::OpName::src0_modifiers,
+                                 AMDGPU::OpName::src1_modifiers,
+                                 AMDGPU::OpName::src2_modifiers};
+  for (unsigned I = 0; I < 3; ++I) {
+    int SrcIdx = AMDGPU::getNamedOperandIdx(MI.getOpcode(), Srcs[I]);
+    if (SrcIdx < 0 || &MI.getOperand(SrcIdx) != &Op)
+      continue;
+    int ModIdx = AMDGPU::getNamedOperandIdx(MI.getOpcode(), Mods[I]);
+    if (ModIdx < 0 || TRI.getRegSizeInBits(*TRI.getPhysRegBaseClass(Reg)) != 64)
+      return Reg;
+    unsigned Mod = MI.getOperand(ModIdx).getImm();
+    bool LoReadsHi = Mod & SISrcMods::OP_SEL_0;
+    bool HiReadsHi = Mod & SISrcMods::OP_SEL_1;
+    if (LoReadsHi != HiReadsHi)
+      return Reg;
+    MCRegister Half = TRI.getSubReg(Reg, LoReadsHi ? AMDGPU::sub1 : AMDGPU::sub0);
+    return Half ? Half : Reg;
+  }
+  return Reg;
+}
 
 namespace {
 
@@ -2504,6 +2550,8 @@ bool SIInsertWaitcnts::generateWaitcntInstBefore(
         MCRegister Reg = Op.getReg().asMCReg();
 
         const bool IsVGPR = TRI.isVectorRegister(MRI, Op.getReg());
+        if (IsVGPR)
+          Reg = getReadHalfOfPackedF32Source(MI, Op, Reg, TRI);
         if (IsVGPR) {
           // Implicit VGPR defs and uses are never a part of the memory
           // instructions description and usually present to account for
