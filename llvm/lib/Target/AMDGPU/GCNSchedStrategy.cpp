@@ -133,6 +133,13 @@ static cl::opt<bool> DeferAsyncLDSDMASkipOverBudget(
              "before scheduling is below the target occupancy"),
     cl::init(false), cl::Hidden);
 
+static cl::opt<bool> DeferAsyncLDSDMASkipOverBudgetStaged(
+    "amdgpu-sched-defer-async-lds-dma-skip-over-budget-staged",
+    cl::desc("With the mixed-or-staged gate, do not defer async LDS DMAs in "
+             "regions without ordinary VMEM loads whose register pressure "
+             "before scheduling is below the target occupancy"),
+    cl::init(false), cl::Hidden);
+
 static cl::opt<bool> PrintMaxRPRegUsageBeforeScheduler(
     "amdgpu-print-max-reg-pressure-regusage-before-scheduler", cl::Hidden,
     cl::desc("Print a list of live registers along with their def/uses at the "
@@ -236,7 +243,9 @@ void GCNSchedStrategy::initialize(ScheduleDAGMI *DAG) {
         HasOrdinaryVMEMLoad = true;
       }
     }
-    if (!HasOrdinaryVMEMLoad && !HasRetiredDMA) {
+    if (!HasOrdinaryVMEMLoad &&
+        (!HasRetiredDMA ||
+         (DeferAsyncLDSDMASkipOverBudgetStaged && RegionBelowTargetOccupancy))) {
       DeferBarrierOf.clear();
       UnretiredAsyncDMAs.reset();
     }
