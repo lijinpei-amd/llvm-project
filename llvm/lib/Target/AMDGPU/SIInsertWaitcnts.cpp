@@ -55,6 +55,13 @@ static cl::opt<bool> ForceEmitZeroLoadFlag(
     cl::desc("Force all waitcnt load counters to wait until 0"),
     cl::init(false), cl::Hidden);
 
+static cl::opt<bool> AsyncMarkPreheaderFlush(
+    "amdgpu-waitcnt-asyncmark-preheader-flush",
+    cl::desc("Flush vmem counters in the preheader of a loop that contains a "
+             "WAIT_ASYNCMARK, so the loop's async-mark waits only cover the "
+             "back edge"),
+    cl::init(true), cl::Hidden);
+
 namespace {
 
 template <typename EmitWaitcntFn>
@@ -3234,6 +3241,18 @@ SIInsertWaitcnts::isPreheaderToFlush(MachineBasicBlock &MBB,
 
   if (Loop->getLoopPreheader() == &MBB) {
     Iterator->second = getPreheaderFlushFlags(Loop, ScoreBrackets);
+    // A WAIT_ASYNCMARK in the loop merges the preheader and back-edge states.
+    // When the preheader issued ordinary VMEM loads before its last async
+    // operation, the in-order counter forces the merged wait to drain those
+    // loads in every iteration. Drain them once here instead.
+    if (AsyncMarkPreheaderFlush && !Iterator->second.FlushVmCnt &&
+        ScoreBrackets.hasPendingEvent(AMDGPU::LOAD_CNT) &&
+        any_of(Loop->blocks(), [](const MachineBasicBlock *B) {
+          return any_of(*B, [](const MachineInstr &MI) {
+            return MI.getOpcode() == AMDGPU::WAIT_ASYNCMARK;
+          });
+        }))
+      Iterator->second.FlushVmCnt = true;
     return Iterator->second;
   }
 
