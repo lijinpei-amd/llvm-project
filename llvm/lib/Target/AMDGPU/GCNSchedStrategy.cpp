@@ -106,6 +106,14 @@ static cl::opt<unsigned> DeferAsyncLDSDMAFraction(
              "(0: until no other candidate is left)"),
     cl::init(0), cl::Hidden);
 
+static cl::opt<bool> DeferAsyncLDSDMAMixedOrStaged(
+    "amdgpu-sched-defer-async-lds-dma-mixed-or-staged",
+    cl::desc("Defer loop-carried async LDS DMAs only in regions that also have "
+             "ordinary VMEM loads (in-order vmcnt) or async DMAs retired by an "
+             "in-region wait (unrolled pipeline stages), and only against "
+             "instructions after the DMA's preceding barrier"),
+    cl::init(false), cl::Hidden);
+
 static cl::opt<bool> DeferAsyncLDSDMASkipUnclustered(
     "amdgpu-sched-defer-async-lds-dma-skip-unclustered",
     cl::desc("Do not defer async LDS DMAs in the unclustered high register "
@@ -196,6 +204,30 @@ void GCNSchedStrategy::initialize(ScheduleDAGMI *DAG) {
 
   if (DeferAsyncLDSDMABottomUp || PreferAsyncLDSDMATopDown)
     collectUnretiredAsyncDMAs(DAG->SUnits, UnretiredAsyncDMAs);
+  DeferBarrierOf.clear();
+  if (DeferAsyncLDSDMABottomUp && DeferAsyncLDSDMAMixedOrStaged) {
+    const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(DAG->TII);
+    bool HasOrdinaryVMEMLoad = false, HasRetiredDMA = false;
+    unsigned LastBarrier = ~0u;
+    for (const SUnit &SU : DAG->SUnits) {
+      const MachineInstr &MI = *SU.getInstr();
+      if (MI.getOpcode() == AMDGPU::S_BARRIER)
+        LastBarrier = SU.NodeNum;
+      if (isAsyncLDSDMA(MI)) {
+        if (UnretiredAsyncDMAs.test(SU.NodeNum))
+          DeferBarrierOf[SU.NodeNum] = LastBarrier;
+        else
+          HasRetiredDMA = true;
+      } else if (MI.mayLoad() && SIInstrInfo::isVMEM(MI) &&
+                 !SIInstrInfo::isLDSDMA(MI) && !TII->mayAccessScratch(MI)) {
+        HasOrdinaryVMEMLoad = true;
+      }
+    }
+    if (!HasOrdinaryVMEMLoad && !HasRetiredDMA) {
+      DeferBarrierOf.clear();
+      UnretiredAsyncDMAs.reset();
+    }
+  }
   DMAGates.clear();
   if (DeferAsyncLDSDMABottomUp && DeferAsyncLDSDMAFraction) {
     unsigned LastBarrier = ~0u;
@@ -834,6 +866,19 @@ bool GCNSchedStrategy::tryDeferAsyncLDSDMA(SchedCandidate &Cand,
       CurrentStage != SchedStages.end() &&
       *CurrentStage == GCNSchedStageID::UnclusteredHighRPReschedule)
     return false;
+  if (DeferAsyncLDSDMAMixedOrStaged) {
+    // Only defer a DMA against instructions after its preceding barrier, so
+    // work of earlier pipeline stages does not sink below it.
+    auto DeferredAgainst = [&](const SUnit *DMA, const SUnit *Other) {
+      if (!isDeferredAsyncDMA(DMA))
+        return false;
+      auto It = DeferBarrierOf.find(DMA->NodeNum);
+      return It != DeferBarrierOf.end() &&
+             (It->second == ~0u || Other->NodeNum > It->second);
+    };
+    return tryLess(DeferredAgainst(TryCand.SU, Cand.SU),
+                   DeferredAgainst(Cand.SU, TryCand.SU), TryCand, Cand, Stall);
+  }
   return tryLess(isDeferredAsyncDMA(TryCand.SU), isDeferredAsyncDMA(Cand.SU),
                  TryCand, Cand, Stall);
 }

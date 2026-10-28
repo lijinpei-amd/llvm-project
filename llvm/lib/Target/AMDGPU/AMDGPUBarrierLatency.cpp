@@ -47,6 +47,12 @@ static cl::opt<unsigned> AsyncMarkWaitLatencyValueOpt(
              "DMA's scheduling model latency)"),
     cl::init(0), cl::Hidden);
 
+static cl::opt<bool> AsyncMarkExitLatencyMixedOrStagedOpt(
+    "amdgpu-asyncmark-exit-latency-mixed-or-staged",
+    cl::desc("Apply -amdgpu-asyncmark-exit-latency only in regions that also "
+             "have ordinary VMEM loads or async DMAs retired in the region"),
+    cl::init(false), cl::Hidden);
+
 static cl::opt<unsigned> AsyncMarkExitLatencyOpt(
     "amdgpu-asyncmark-exit-latency",
     cl::desc("Minimum latency from an async LDS DMA that no WAIT_ASYNCMARK of "
@@ -125,6 +131,7 @@ void BarrierLatency::apply(ScheduleDAGInstrs *DAG) {
   // no WAIT_ASYNCMARK of the region has retired yet, oldest first.
   SmallVector<SUnit *, 8> OpenMarkGroup;
   SmallVector<SmallVector<SUnit *, 8>, 4> MarkGroups;
+  bool RetiredAnyAsyncDMA = false;
 
   for (SUnit &SU : DAG->SUnits) {
     const MachineInstr *MI = SU.getInstr();
@@ -161,6 +168,9 @@ void BarrierLatency::apply(ScheduleDAGInstrs *DAG) {
           DAG->addEdge(&SU, Dep);
         }
       }
+      RetiredAnyAsyncDMA |= llvm::any_of(
+          ArrayRef(MarkGroups).take_front(Retired),
+          [](const SmallVector<SUnit *, 8> &G) { return !G.empty(); });
       MarkGroups.erase(MarkGroups.begin(), MarkGroups.begin() + Retired);
       continue;
     }
@@ -257,7 +267,18 @@ void BarrierLatency::apply(ScheduleDAGInstrs *DAG) {
 
   // DMAs that no wait of the region retires are waited for after the region,
   // e.g. by the next iteration's WAIT_ASYNCMARK of a pipelined loop.
-  if (AsyncMarkWaitLatencyOpt && AsyncMarkExitLatencyOpt) {
+  bool ExitLatencyRegion = true;
+  if (AsyncMarkExitLatencyMixedOrStagedOpt) {
+    bool HasOrdinaryVMEMLoad = false;
+    for (SUnit &SU : DAG->SUnits) {
+      const MachineInstr &MI = *SU.getInstr();
+      if (MI.mayLoad() && SIInstrInfo::isVMEM(MI) && !SIInstrInfo::isLDSDMA(MI) &&
+          !TII->mayAccessScratch(MI))
+        HasOrdinaryVMEMLoad = true;
+    }
+    ExitLatencyRegion = HasOrdinaryVMEMLoad || RetiredAnyAsyncDMA;
+  }
+  if (AsyncMarkWaitLatencyOpt && AsyncMarkExitLatencyOpt && ExitLatencyRegion) {
     MarkGroups.push_back(std::move(OpenMarkGroup));
     for (const SmallVector<SUnit *, 8> &Group : MarkGroups) {
       for (SUnit *AsyncSU : Group) {

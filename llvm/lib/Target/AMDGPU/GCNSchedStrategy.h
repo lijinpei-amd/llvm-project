@@ -102,6 +102,10 @@ protected:
   };
   DenseMap<unsigned, DMAGate> DMAGates;
 
+  /// For -amdgpu-sched-defer-async-lds-dma-mixed-or-staged: the NodeNum of the
+  /// last S_BARRIER before each deferred DMA (~0u if none).
+  DenseMap<unsigned, unsigned> DeferBarrierOf;
+
   bool isDeferredAsyncDMA(const SUnit *SU) const;
 
   void printCandidateDecision(const SchedCandidate &Current,
