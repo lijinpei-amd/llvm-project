@@ -19,6 +19,11 @@ class MachineFunction;
 std::unique_ptr<ScheduleDAGMutation>
 createAMDGPUBarrierLatencyDAGMutation(MachineFunction *MF);
 
+/// Keep program order between async LDS DMAs and ordinary global loads
+/// (-amdgpu-async-dma-keep-load-order). Also applied by the barrier latency
+/// mutation; use this one where a scheduling stage replaces the mutations.
+std::unique_ptr<ScheduleDAGMutation> createAMDGPUAsyncDMALoadOrderDAGMutation();
+
 } // namespace llvm
 
 #endif // LLVM_LIB_TARGET_AMDGPU_AMDGPUBARRIERLATENCY_H
