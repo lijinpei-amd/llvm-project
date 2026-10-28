@@ -18,6 +18,7 @@
 #include "AMDGPU.h"
 #include "AMDGPUAliasAnalysis.h"
 #include "AMDGPUAsmPrinter.h"
+#include "AMDGPUAsyncVMemOrder.h"
 #include "AMDGPUBarrierLatency.h"
 #include "AMDGPUCoExecSchedStrategy.h"
 #include "AMDGPUCtorDtorLowering.h"
@@ -790,6 +791,7 @@ createGCNMaxOccupancyMachineScheduler(MachineSchedContext *C) {
   DAG->addMutation(createAMDGPUExportClusteringDAGMutation());
   DAG->addMutation(createAMDGPUBarrierLatencyDAGMutation(C->MF));
   DAG->addMutation(createAMDGPUHazardLatencyDAGMutation(C->MF));
+  DAG->addMutation(createAMDGPUAsyncVMemOrderDAGMutation());
   return DAG;
 }
 
@@ -1470,6 +1472,7 @@ GCNTargetMachine::createPostMachineScheduler(MachineSchedContext *C) const {
   DAG->addMutation(createAMDGPUExportClusteringDAGMutation());
   DAG->addMutation(createAMDGPUBarrierLatencyDAGMutation(C->MF));
   DAG->addMutation(createAMDGPUHazardLatencyDAGMutation(C->MF));
+  DAG->addMutation(createAMDGPUAsyncVMemOrderDAGMutation());
   return DAG;
 }
 //===----------------------------------------------------------------------===//
