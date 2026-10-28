@@ -35,6 +35,18 @@ static cl::opt<unsigned> BarrierSignalWaitLatencyOpt(
              "to encourage scheduling independent work between them"),
     cl::init(16), cl::Hidden);
 
+static cl::opt<bool> AsyncMarkWaitLatencyOpt(
+    "amdgpu-asyncmark-wait-latency",
+    cl::desc("Give the edge from an async LDS DMA to the WAIT_ASYNCMARK that "
+             "retires it the DMA's latency"),
+    cl::init(true), cl::Hidden);
+
+static cl::opt<unsigned> AsyncMarkWaitLatencyValueOpt(
+    "amdgpu-asyncmark-wait-latency-value",
+    cl::desc("Latency for -amdgpu-asyncmark-wait-latency edges (0: use the "
+             "DMA's scheduling model latency)"),
+    cl::init(0), cl::Hidden);
+
 namespace {
 
 class BarrierLatency : public ScheduleDAGMutation {
@@ -102,10 +114,52 @@ void BarrierLatency::apply(ScheduleDAGInstrs *DAG) {
   SmallVector<SUnit *, 8> RegionTDM;
   SmallVector<SUnit *, 8> RegionAsync;
   const TargetSchedModel *SchedModel = DAG->getSchedModel();
+  // Async operations of the current ASYNCMARK group and the closed groups that
+  // no WAIT_ASYNCMARK of the region has retired yet, oldest first.
+  SmallVector<SUnit *, 8> OpenMarkGroup;
+  SmallVector<SmallVector<SUnit *, 8>, 4> MarkGroups;
 
   for (SUnit &SU : DAG->SUnits) {
     const MachineInstr *MI = SU.getInstr();
     unsigned Op = MI->getOpcode();
+
+    if (AsyncMarkWaitLatencyOpt && Op == AMDGPU::ASYNCMARK) {
+      MarkGroups.push_back(std::move(OpenMarkGroup));
+      OpenMarkGroup.clear();
+      continue;
+    }
+    if (AsyncMarkWaitLatencyOpt && Op == AMDGPU::WAIT_ASYNCMARK) {
+      // WAIT_ASYNCMARK N completes every group except the N most recent ones.
+      uint64_t Keep = MI->getOperand(0).getImm();
+      if (MarkGroups.size() <= Keep)
+        continue;
+      unsigned Retired = MarkGroups.size() - Keep;
+      for (unsigned G = 0; G != Retired; ++G) {
+        for (SUnit *AsyncSU : MarkGroups[G]) {
+          unsigned Latency =
+              AsyncMarkWaitLatencyValueOpt
+                  ? unsigned(AsyncMarkWaitLatencyValueOpt)
+              : SchedModel ? SchedModel->computeInstrLatency(AsyncSU->getInstr(), false)
+                           : FenceLatency;
+          auto It = llvm::find_if(SU.Preds, [&](const SDep &D) {
+            return D.getSUnit() == AsyncSU;
+          });
+          if (It != SU.Preds.end()) {
+            if (It->getLatency() < Latency)
+              setLatencyForEdge(*It, SU, Latency);
+            continue;
+          }
+          SDep Dep(AsyncSU, SDep::Artificial);
+          Dep.setLatency(Latency);
+          DAG->addEdge(&SU, Dep);
+        }
+      }
+      MarkGroups.erase(MarkGroups.begin(), MarkGroups.begin() + Retired);
+      continue;
+    }
+    if (AsyncMarkWaitLatencyOpt && TII->isLDSDMA(*MI) &&
+        MI->readsRegister(AMDGPU::AsyncMarker, /*TRI=*/nullptr))
+      OpenMarkGroup.push_back(&SU);
 
     if (Op == AMDGPU::ATOMIC_FENCE) {
       // Update latency on barrier edges of ATOMIC_FENCE.
