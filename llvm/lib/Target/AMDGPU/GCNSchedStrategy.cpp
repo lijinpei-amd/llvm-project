@@ -120,6 +120,13 @@ static cl::opt<bool> DeferAsyncLDSDMASkipUnclustered(
              "pressure reschedule stage"),
     cl::init(false), cl::Hidden);
 
+static cl::opt<bool> DeferAsyncLDSDMAAfterPressure(
+    "amdgpu-sched-defer-async-lds-dma-after-pressure",
+    cl::desc("Apply the async LDS DMA deferral only after the physical "
+             "register bias and the register excess and critical pressure "
+             "comparisons"),
+    cl::init(false), cl::Hidden);
+
 static cl::opt<bool> PrintMaxRPRegUsageBeforeScheduler(
     "amdgpu-print-max-reg-pressure-regusage-before-scheduler", cl::Hidden,
     cl::desc("Print a list of live registers along with their def/uses at the "
@@ -896,6 +903,19 @@ bool GCNSchedStrategy::isDeferredAsyncDMA(const SUnit *SU) const {
 bool GCNSchedStrategy::tryCandidate(SchedCandidate &Cand,
                                     SchedCandidate &TryCand,
                                     SchedBoundary *Zone) const {
+  if (Cand.isValid() && DeferAsyncLDSDMAAfterPressure) {
+    if (tryGreater(biasPhysReg(TryCand.SU, TryCand.AtTop),
+                   biasPhysReg(Cand.SU, Cand.AtTop), TryCand, Cand, PhysReg))
+      return TryCand.Reason != NoCand;
+    if (DAG->isTrackingPressure() &&
+        tryPressure(TryCand.RPDelta.Excess, Cand.RPDelta.Excess, TryCand, Cand,
+                    RegExcess, TRI, DAG->MF))
+      return TryCand.Reason != NoCand;
+    if (DAG->isTrackingPressure() &&
+        tryPressure(TryCand.RPDelta.CriticalMax, Cand.RPDelta.CriticalMax,
+                    TryCand, Cand, RegCritical, TRI, DAG->MF))
+      return TryCand.Reason != NoCand;
+  }
   if (Cand.isValid() && tryDeferAsyncLDSDMA(Cand, TryCand, Zone))
     return TryCand.Reason != NoCand;
   return GenericScheduler::tryCandidate(Cand, TryCand, Zone);
@@ -910,7 +930,8 @@ bool GCNSchedStrategy::tryPendingCandidate(SchedCandidate &Cand,
     return true;
   }
 
-  if (tryDeferAsyncLDSDMA(Cand, TryCand, Zone))
+  if (!DeferAsyncLDSDMAAfterPressure &&
+      tryDeferAsyncLDSDMA(Cand, TryCand, Zone))
     return TryCand.Reason != NoCand;
 
   // Bias PhysReg Defs and copies to their uses and defined respectively.
@@ -928,6 +949,10 @@ bool GCNSchedStrategy::tryPendingCandidate(SchedCandidate &Cand,
   if (DAG->isTrackingPressure() &&
       tryPressure(TryCand.RPDelta.CriticalMax, Cand.RPDelta.CriticalMax,
                   TryCand, Cand, RegCritical, TRI, DAG->MF))
+    return TryCand.Reason != NoCand;
+
+  if (DeferAsyncLDSDMAAfterPressure &&
+      tryDeferAsyncLDSDMA(Cand, TryCand, Zone))
     return TryCand.Reason != NoCand;
 
   bool SameBoundary = Zone != nullptr;
