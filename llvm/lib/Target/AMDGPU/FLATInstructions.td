@@ -248,7 +248,7 @@ class FLAT_Load_Pseudo<
   let mayLoad = 1;
   let has_saddr = HasSaddr;
   let enabled_saddr = EnableSaddr;
-  let SchedRW = !if(is_flat_global, [WriteVMEMLoad], [WriteVMEM]);
+  let SchedRW = [WriteVMEM];
 
   let Constraints = !if(HasTiedOutput, "$vdst = $vdst_in", "");
 }
@@ -351,7 +351,7 @@ class FLAT_Global_Load_AddTid_Pseudo <string opName, RegisterOperand regClass,
   let has_data = 0;
   let mayLoad = 1;
   let has_vaddr = 0;
-  let SchedRW = [WriteVMEMLoad];
+  let SchedRW = [WriteVMEM];
   let has_saddr = 1;
   let enabled_saddr = EnableSaddr;
 

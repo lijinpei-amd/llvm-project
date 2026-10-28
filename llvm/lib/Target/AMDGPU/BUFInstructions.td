@@ -532,7 +532,7 @@ class MUBUF_Load_PseudoImpl <string opName,
   let has_vdata = !not(!or(isLds, isLdsOpc));
   let mayLoad = 1;
   let mayStore = isLds;
-  let SchedRW = [WriteVMEMLoad];
+  let SchedRW = !if(!or(isLds, isLdsOpc), [WriteVMEMLoad], [WriteVMEM]);
   let Uses = !if(isGFX9GFX10Async, [EXEC, M0, AsyncMarker],
                  !if(!or(isLds, isLdsOpc), [EXEC, M0], [EXEC]));
   let tfe = isTFE;
