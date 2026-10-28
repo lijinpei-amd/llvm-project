@@ -128,6 +128,12 @@ static cl::opt<bool> DeferAsyncLDSDMAAfterPressure(
              "comparisons"),
     cl::init(false), cl::Hidden);
 
+static cl::opt<bool> DeferAsyncLDSDMASkipOverBudget(
+    "amdgpu-sched-defer-async-lds-dma-skip-over-budget",
+    cl::desc("Do not defer async LDS DMAs in regions whose register pressure "
+             "before scheduling is below the target occupancy"),
+    cl::init(false), cl::Hidden);
+
 static cl::opt<bool> PrintMaxRPRegUsageBeforeScheduler(
     "amdgpu-print-max-reg-pressure-regusage-before-scheduler", cl::Hidden,
     cl::desc("Print a list of live registers along with their def/uses at the "
@@ -235,6 +241,10 @@ void GCNSchedStrategy::initialize(ScheduleDAGMI *DAG) {
       DeferBarrierOf.clear();
       UnretiredAsyncDMAs.reset();
     }
+  }
+  if (DeferAsyncLDSDMASkipOverBudget && RegionBelowTargetOccupancy) {
+    DeferBarrierOf.clear();
+    UnretiredAsyncDMAs.reset();
   }
   DMAGates.clear();
   if (DeferAsyncLDSDMABottomUp && DeferAsyncLDSDMAFraction) {
@@ -2074,6 +2084,9 @@ bool GCNSchedStage::initGCNRegion() {
 
   S.HasHighPressure = false;
   S.KnownExcessRP = isRegionWithExcessRP();
+  S.RegionBelowTargetOccupancy =
+      PressureBefore.getOccupancy(ST, MFI.getDynamicVGPRBlockSize()) <
+      MFI.getOccupancy();
 
   if (DAG.RegionsWithIGLPInstrs[RegionIdx] &&
       StageID != GCNSchedStageID::UnclusteredHighRPReschedule) {

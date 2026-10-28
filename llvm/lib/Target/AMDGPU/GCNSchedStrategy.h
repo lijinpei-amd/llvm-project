@@ -151,6 +151,9 @@ public:
   // increasing ILP and preserving VGPRs.
   bool KnownExcessRP = false;
 
+  // Region register pressure before scheduling is below the target occupancy.
+  bool RegionBelowTargetOccupancy = false;
+
   // An error margin is necessary because of poor performance of the generic RP
   // tracker and can be adjusted up for tuning heuristics to try and more
   // aggressively reduce register pressure.
