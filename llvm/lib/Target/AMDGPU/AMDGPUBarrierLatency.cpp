@@ -53,6 +53,13 @@ static cl::opt<unsigned> AsyncMarkWaitLatencyValueOpt(
              "DMA's scheduling model latency)"),
     cl::init(0), cl::Hidden);
 
+static cl::opt<unsigned> AsyncMarkExitLatencyOpt(
+    "amdgpu-asyncmark-exit-latency",
+    cl::desc("Minimum latency from an async LDS DMA that no WAIT_ASYNCMARK of "
+             "its region retires to the region exit (0: keep the generic "
+             "live-out latency)"),
+    cl::init(0), cl::Hidden);
+
 namespace {
 
 class BarrierLatency : public ScheduleDAGMutation {
@@ -315,6 +322,27 @@ void BarrierLatency::apply(ScheduleDAGInstrs *DAG) {
                          PredSU, WaitVal)) {
           setLatencyForEdge(PredDep, SU, 1);
         }
+      }
+    }
+  }
+
+  // DMAs that no wait of the region retires are waited for after the region,
+  // e.g. by the next iteration's WAIT_ASYNCMARK of a pipelined loop.
+  if (AsyncMarkWaitLatencyOpt && AsyncMarkExitLatencyOpt) {
+    MarkGroups.push_back(std::move(OpenMarkGroup));
+    for (const SmallVector<SUnit *, 8> &Group : MarkGroups) {
+      for (SUnit *AsyncSU : Group) {
+        auto It = llvm::find_if(DAG->ExitSU.Preds, [&](const SDep &D) {
+          return D.getSUnit() == AsyncSU;
+        });
+        if (It != DAG->ExitSU.Preds.end()) {
+          if (It->getLatency() < AsyncMarkExitLatencyOpt)
+            setLatencyForEdge(*It, DAG->ExitSU, AsyncMarkExitLatencyOpt);
+          continue;
+        }
+        SDep Dep(AsyncSU, SDep::Artificial);
+        Dep.setLatency(AsyncMarkExitLatencyOpt);
+        DAG->ExitSU.addPred(Dep);
       }
     }
   }

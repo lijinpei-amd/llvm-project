@@ -88,6 +88,12 @@ static cl::opt<unsigned> PendingQueueLimit(
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 #define DUMP_MAX_REG_PRESSURE
+static cl::opt<bool> DeferAsyncLDSDMABottomUp(
+    "amdgpu-sched-defer-async-lds-dma",
+    cl::desc("In the bottom-up zone, schedule an async LDS DMA only when no "
+             "other candidate is available"),
+    cl::init(true), cl::Hidden);
+
 static cl::opt<bool> PrintMaxRPRegUsageBeforeScheduler(
     "amdgpu-print-max-reg-pressure-regusage-before-scheduler", cl::Hidden,
     cl::desc("Print a list of live registers along with their def/uses at the "
@@ -135,8 +141,43 @@ GCNSchedStrategy::GCNSchedStrategy(const MachineSchedContext *C)
   VGPRThresholdPercent = VGPRThresholdPercentOpt;
 }
 
+static bool isAsyncLDSDMA(const MachineInstr &MI) {
+  return SIInstrInfo::isLDSDMA(MI) &&
+         MI.readsRegister(AMDGPU::AsyncMarker, /*TRI=*/nullptr);
+}
+
+/// Mark the async LDS DMAs that no WAIT_ASYNCMARK of the region retires, i.e.
+/// whose wait is after the region (for example in the next loop iteration).
+static void collectUnretiredAsyncDMAs(ArrayRef<SUnit> SUnits,
+                                      BitVector &Unretired) {
+  Unretired.reset();
+  Unretired.resize(SUnits.size());
+  SmallVector<SmallVector<unsigned, 8>, 4> Groups(1);
+  for (const SUnit &SU : SUnits) {
+    const MachineInstr &MI = *SU.getInstr();
+    if (MI.getOpcode() == AMDGPU::ASYNCMARK) {
+      Groups.emplace_back();
+    } else if (MI.getOpcode() == AMDGPU::WAIT_ASYNCMARK) {
+      // Groups.back() is the open group; the wait keeps the N most recent
+      // closed groups.
+      uint64_t Keep = MI.getOperand(0).getImm();
+      unsigned Closed = Groups.size() - 1;
+      if (Closed > Keep)
+        Groups.erase(Groups.begin(), Groups.begin() + (Closed - Keep));
+    } else if (isAsyncLDSDMA(MI)) {
+      Groups.back().push_back(SU.NodeNum);
+    }
+  }
+  for (const SmallVector<unsigned, 8> &Group : Groups)
+    for (unsigned NodeNum : Group)
+      Unretired.set(NodeNum);
+}
+
 void GCNSchedStrategy::initialize(ScheduleDAGMI *DAG) {
   GenericScheduler::initialize(DAG);
+
+  if (DeferAsyncLDSDMABottomUp)
+    collectUnretiredAsyncDMAs(DAG->SUnits, UnretiredAsyncDMAs);
 
   MF = &DAG->MF;
 
@@ -727,6 +768,27 @@ bool GCNSchedStrategy::hasNextStage() const {
   return std::next(CurrentStage) != SchedStages.end();
 }
 
+bool GCNSchedStrategy::tryDeferAsyncLDSDMA(SchedCandidate &Cand,
+                                           SchedCandidate &TryCand,
+                                           SchedBoundary *Zone) const {
+  if (!DeferAsyncLDSDMABottomUp || !Zone || Zone->isTop())
+    return false;
+  auto IsDeferred = [&](const SUnit *SU) {
+    return SU->NodeNum < UnretiredAsyncDMAs.size() &&
+           UnretiredAsyncDMAs.test(SU->NodeNum);
+  };
+  return tryLess(IsDeferred(TryCand.SU), IsDeferred(Cand.SU), TryCand, Cand,
+                 Stall);
+}
+
+bool GCNSchedStrategy::tryCandidate(SchedCandidate &Cand,
+                                    SchedCandidate &TryCand,
+                                    SchedBoundary *Zone) const {
+  if (Cand.isValid() && tryDeferAsyncLDSDMA(Cand, TryCand, Zone))
+    return TryCand.Reason != NoCand;
+  return GenericScheduler::tryCandidate(Cand, TryCand, Zone);
+}
+
 bool GCNSchedStrategy::tryPendingCandidate(SchedCandidate &Cand,
                                            SchedCandidate &TryCand,
                                            SchedBoundary *Zone) const {
@@ -735,6 +797,9 @@ bool GCNSchedStrategy::tryPendingCandidate(SchedCandidate &Cand,
     TryCand.Reason = NodeOrder;
     return true;
   }
+
+  if (tryDeferAsyncLDSDMA(Cand, TryCand, Zone))
+    return TryCand.Reason != NoCand;
 
   // Bias PhysReg Defs and copies to their uses and defined respectively.
   if (tryGreater(biasPhysReg(TryCand.SU, TryCand.AtTop),
