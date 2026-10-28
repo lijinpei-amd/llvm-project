@@ -1177,11 +1177,17 @@ bool CandidateHeuristics::tryCriticalResource(
   return false;
 }
 
+static cl::opt<bool> CoExecRewriteMFMAForm(
+    "amdgpu-coexec-rewrite-mfma-form", cl::Hidden,
+    cl::desc("Run the MFMA-form rewrite stage in the co-exec scheduler"),
+    cl::init(true));
+
 AMDGPUCoExecSchedStrategy::AMDGPUCoExecSchedStrategy(
     const MachineSchedContext *C)
     : GCNSchedStrategy(C) {
   SchedStages.push_back(GCNSchedStageID::ILPInitialSchedule);
-  SchedStages.push_back(GCNSchedStageID::RewriteMFMAForm);
+  if (CoExecRewriteMFMAForm)
+    SchedStages.push_back(GCNSchedStageID::RewriteMFMAForm);
   SchedStages.push_back(GCNSchedStageID::LiveIntervalRPReschedule);
   SchedStages.push_back(GCNSchedStageID::PreRARematerialize);
   // Use more accurate GCN pressure trackers.
