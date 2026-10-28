@@ -93,6 +93,17 @@ protected:
   /// retires (indexed by NodeNum).
   BitVector UnretiredAsyncDMAs;
 
+  /// For -amdgpu-sched-defer-async-lds-dma-fraction: per deferred DMA, the
+  /// NodeNum of the last S_BARRIER before it (or ~0u), the number of MFMAs
+  /// after that barrier the bottom zone must schedule before the DMA, and how
+  /// many it has scheduled.
+  struct DMAGate {
+    unsigned Barrier, Needed, Scheduled;
+  };
+  DenseMap<unsigned, DMAGate> DMAGates;
+
+  bool isDeferredAsyncDMA(const SUnit *SU) const;
+
   void printCandidateDecision(const SchedCandidate &Current,
                               const SchedCandidate &Preferred);
 

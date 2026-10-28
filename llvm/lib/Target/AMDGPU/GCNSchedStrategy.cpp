@@ -99,6 +99,13 @@ static cl::opt<bool> PreferAsyncLDSDMATopDown(
              "in-region wait retires"),
     cl::init(false), cl::Hidden);
 
+static cl::opt<unsigned> DeferAsyncLDSDMAFraction(
+    "amdgpu-sched-defer-async-lds-dma-fraction",
+    cl::desc("Defer a loop-carried async LDS DMA bottom-up only until this "
+             "percentage of the MFMAs after its preceding barrier is scheduled "
+             "(0: until no other candidate is left)"),
+    cl::init(0), cl::Hidden);
+
 static cl::opt<bool> DeferAsyncLDSDMASkipUnclustered(
     "amdgpu-sched-defer-async-lds-dma-skip-unclustered",
     cl::desc("Do not defer async LDS DMAs in the unclustered high register "
@@ -189,6 +196,24 @@ void GCNSchedStrategy::initialize(ScheduleDAGMI *DAG) {
 
   if (DeferAsyncLDSDMABottomUp || PreferAsyncLDSDMATopDown)
     collectUnretiredAsyncDMAs(DAG->SUnits, UnretiredAsyncDMAs);
+  DMAGates.clear();
+  if (DeferAsyncLDSDMABottomUp && DeferAsyncLDSDMAFraction) {
+    unsigned LastBarrier = ~0u;
+    for (const SUnit &SU : DAG->SUnits) {
+      if (SU.getInstr()->getOpcode() == AMDGPU::S_BARRIER)
+        LastBarrier = SU.NodeNum;
+      else if (UnretiredAsyncDMAs.test(SU.NodeNum))
+        DMAGates[SU.NodeNum] = {LastBarrier, 0, 0};
+    }
+    for (auto &[DMA, Gate] : DMAGates) {
+      unsigned Window = 0;
+      for (const SUnit &SU : DAG->SUnits)
+        if ((Gate.Barrier == ~0u || SU.NodeNum > Gate.Barrier) &&
+            SIInstrInfo::isMFMAorWMMA(*SU.getInstr()))
+          ++Window;
+      Gate.Needed = divideCeil(Window * DeferAsyncLDSDMAFraction, 100);
+    }
+  }
 
   MF = &DAG->MF;
 
@@ -751,6 +776,11 @@ SUnit *GCNSchedStrategy::pickNode(bool &IsTopNode) {
 }
 
 void GCNSchedStrategy::schedNode(SUnit *SU, bool IsTopNode) {
+  if (!IsTopNode && !DMAGates.empty() &&
+      SIInstrInfo::isMFMAorWMMA(*SU->getInstr()))
+    for (auto &[DMA, Gate] : DMAGates)
+      if (Gate.Barrier == ~0u || SU->NodeNum > Gate.Barrier)
+        ++Gate.Scheduled;
   if (useGCNTrackers()) {
     MachineInstr *MI = SU->getInstr();
     IsTopNode ? DownwardTracker.advance(*MI) : UpwardTracker.recede(*MI);
@@ -804,12 +834,18 @@ bool GCNSchedStrategy::tryDeferAsyncLDSDMA(SchedCandidate &Cand,
       CurrentStage != SchedStages.end() &&
       *CurrentStage == GCNSchedStageID::UnclusteredHighRPReschedule)
     return false;
-  auto IsDeferred = [&](const SUnit *SU) {
-    return SU->NodeNum < UnretiredAsyncDMAs.size() &&
-           UnretiredAsyncDMAs.test(SU->NodeNum);
-  };
-  return tryLess(IsDeferred(TryCand.SU), IsDeferred(Cand.SU), TryCand, Cand,
-                 Stall);
+  return tryLess(isDeferredAsyncDMA(TryCand.SU), isDeferredAsyncDMA(Cand.SU),
+                 TryCand, Cand, Stall);
+}
+
+bool GCNSchedStrategy::isDeferredAsyncDMA(const SUnit *SU) const {
+  if (SU->NodeNum >= UnretiredAsyncDMAs.size() ||
+      !UnretiredAsyncDMAs.test(SU->NodeNum))
+    return false;
+  if (!DeferAsyncLDSDMAFraction)
+    return true;
+  auto It = DMAGates.find(SU->NodeNum);
+  return It != DMAGates.end() && It->second.Scheduled < It->second.Needed;
 }
 
 bool GCNSchedStrategy::tryCandidate(SchedCandidate &Cand,
