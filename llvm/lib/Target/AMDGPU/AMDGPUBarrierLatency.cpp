@@ -29,6 +29,12 @@
 
 using namespace llvm;
 
+static cl::opt<bool> AsyncDMAKeepLoadOrderOpt(
+    "amdgpu-async-dma-keep-load-order",
+    cl::desc("Keep the program order between async LDS DMAs and ordinary "
+             "global loads of a scheduling region"),
+    cl::init(false), cl::Hidden);
+
 static cl::opt<unsigned> BarrierSignalWaitLatencyOpt(
     "amdgpu-barrier-signal-wait-latency",
     cl::desc("Synthetic latency between S_BARRIER_SIGNAL and S_BARRIER_WAIT "
@@ -95,8 +101,73 @@ void setLatencyForEdge(SDep &PredDep, SUnit &SU, unsigned Latency) {
   SU.setDepthDirty();
 }
 
+/// Without ASYNCMARK's side effect nothing orders an async LDS DMA against an
+/// ordinary global load, but vmcnt retires both in issue order. The program
+/// order the frontend emitted (Triton's pipeliner keeps kernel source order) is
+/// the order in which the loads are needed, so keep it: add an order edge from
+/// every such load to every later load of the other kind. After RA, consecutive
+/// loads may be bundled; a bundle is classified by the loads inside it.
+enum class GlobalLoadKind { None, AsyncDMA, Ordinary };
+
+static GlobalLoadKind classifyGlobalLoad(const MachineInstr &MI,
+                                         const SIInstrInfo *TII) {
+  if (SIInstrInfo::isLDSDMA(MI))
+    return MI.readsRegister(AMDGPU::AsyncMarker, /*TRI=*/nullptr)
+               ? GlobalLoadKind::AsyncDMA
+               : GlobalLoadKind::None;
+  if (MI.mayLoad() && !MI.mayStore() && SIInstrInfo::isVMEM(MI) &&
+      !TII->mayAccessScratch(MI))
+    return GlobalLoadKind::Ordinary;
+  return GlobalLoadKind::None;
+}
+
+static GlobalLoadKind classifyGlobalLoadOrBundle(const MachineInstr &MI,
+                                                 const SIInstrInfo *TII) {
+  if (!MI.isBundle())
+    return classifyGlobalLoad(MI, TII);
+  GlobalLoadKind Kind = GlobalLoadKind::None;
+  for (auto I = std::next(MI.getIterator()), E = MI.getParent()->instr_end();
+       I != E && I->isBundledWithPred(); ++I) {
+    GlobalLoadKind K = classifyGlobalLoad(*I, TII);
+    if (K == GlobalLoadKind::AsyncDMA)
+      return K;
+    if (K == GlobalLoadKind::Ordinary)
+      Kind = K;
+  }
+  return Kind;
+}
+
+static void keepAsyncDMALoadOrder(ScheduleDAGInstrs *DAG,
+                                  const SIInstrInfo *TII) {
+  SmallVector<std::pair<SUnit *, bool>, 32> Ordered; // (SU, IsAsyncDMA)
+  for (SUnit &SU : DAG->SUnits) {
+    GlobalLoadKind K = classifyGlobalLoadOrBundle(*SU.getInstr(), TII);
+    if (K != GlobalLoadKind::None)
+      Ordered.emplace_back(&SU, K == GlobalLoadKind::AsyncDMA);
+  }
+  bool HasDMA = llvm::any_of(Ordered, [](auto &P) { return P.second; });
+  bool HasLoad = llvm::any_of(Ordered, [](auto &P) { return !P.second; });
+  if (!HasDMA || !HasLoad)
+    return;
+  for (unsigned I = 0, E = Ordered.size(); I != E; ++I)
+    for (unsigned J = I + 1; J != E; ++J)
+      if (Ordered[I].second != Ordered[J].second)
+        DAG->addEdge(Ordered[J].first, SDep(Ordered[I].first, SDep::Artificial));
+}
+
+/// Standalone form, for scheduling stages that replace the default mutations.
+class AsyncDMALoadOrder : public ScheduleDAGMutation {
+public:
+  void apply(ScheduleDAGInstrs *DAG) override {
+    if (AsyncDMAKeepLoadOrderOpt)
+      keepAsyncDMALoadOrder(DAG, static_cast<const SIInstrInfo *>(DAG->TII));
+  }
+};
+
 void BarrierLatency::apply(ScheduleDAGInstrs *DAG) {
   const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(DAG->TII);
+  if (AsyncDMAKeepLoadOrderOpt)
+    keepAsyncDMALoadOrder(DAG, TII);
   constexpr unsigned FenceLatency = 2000;
   const unsigned BarrierSignalWaitLatency = BarrierSignalWaitLatencyOpt;
   SmallVector<SUnit *, 8> RegionTDM;
@@ -200,4 +271,9 @@ void BarrierLatency::apply(ScheduleDAGInstrs *DAG) {
 std::unique_ptr<ScheduleDAGMutation>
 llvm::createAMDGPUBarrierLatencyDAGMutation(MachineFunction *MF) {
   return std::make_unique<BarrierLatency>(MF);
+}
+
+std::unique_ptr<ScheduleDAGMutation>
+llvm::createAMDGPUAsyncDMALoadOrderDAGMutation() {
+  return std::make_unique<AsyncDMALoadOrder>();
 }
