@@ -93,6 +93,18 @@ static cl::opt<bool> DeferAsyncLDSDMABottomUp(
              "other candidate is available"),
     cl::init(true), cl::Hidden);
 
+static cl::opt<bool> PreferAsyncLDSDMATopDown(
+    "amdgpu-sched-prefer-async-lds-dma-topdown",
+    cl::desc("In the top-down zone, prefer a ready async LDS DMA that no "
+             "in-region wait retires"),
+    cl::init(false), cl::Hidden);
+
+static cl::opt<bool> DeferAsyncLDSDMASkipUnclustered(
+    "amdgpu-sched-defer-async-lds-dma-skip-unclustered",
+    cl::desc("Do not defer async LDS DMAs in the unclustered high register "
+             "pressure reschedule stage"),
+    cl::init(false), cl::Hidden);
+
 static cl::opt<bool> PrintMaxRPRegUsageBeforeScheduler(
     "amdgpu-print-max-reg-pressure-regusage-before-scheduler", cl::Hidden,
     cl::desc("Print a list of live registers along with their def/uses at the "
@@ -175,7 +187,7 @@ static void collectUnretiredAsyncDMAs(ArrayRef<SUnit> SUnits,
 void GCNSchedStrategy::initialize(ScheduleDAGMI *DAG) {
   GenericScheduler::initialize(DAG);
 
-  if (DeferAsyncLDSDMABottomUp)
+  if (DeferAsyncLDSDMABottomUp || PreferAsyncLDSDMATopDown)
     collectUnretiredAsyncDMAs(DAG->SUnits, UnretiredAsyncDMAs);
 
   MF = &DAG->MF;
@@ -770,7 +782,27 @@ bool GCNSchedStrategy::hasNextStage() const {
 bool GCNSchedStrategy::tryDeferAsyncLDSDMA(SchedCandidate &Cand,
                                            SchedCandidate &TryCand,
                                            SchedBoundary *Zone) const {
-  if (!DeferAsyncLDSDMABottomUp || !Zone || Zone->isTop())
+  if (!Zone)
+    return false;
+  if (Zone->isTop()) {
+    // Top-down, issue a ready loop-carried DMA first. A DMA that waits for a
+    // busy unbuffered resource is pending and not compared here.
+    if (!PreferAsyncLDSDMATopDown)
+      return false;
+    auto IsDeferredDMA = [&](const SUnit *SU) {
+      return SU->NodeNum < UnretiredAsyncDMAs.size() &&
+             UnretiredAsyncDMAs.test(SU->NodeNum);
+    };
+    return tryGreater(IsDeferredDMA(TryCand.SU), IsDeferredDMA(Cand.SU),
+                      TryCand, Cand, Stall);
+  }
+  if (!DeferAsyncLDSDMABottomUp)
+    return false;
+  // The unclustered high-RP stage only tries to reduce register pressure;
+  // deferring the DMAs there clusters them at the top of the region.
+  if (DeferAsyncLDSDMASkipUnclustered && CurrentStage &&
+      CurrentStage != SchedStages.end() &&
+      *CurrentStage == GCNSchedStageID::UnclusteredHighRPReschedule)
     return false;
   auto IsDeferred = [&](const SUnit *SU) {
     return SU->NodeNum < UnretiredAsyncDMAs.size() &&
