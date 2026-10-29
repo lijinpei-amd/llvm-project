@@ -35,6 +35,19 @@ static cl::opt<bool> AsyncDMAKeepLoadOrderOpt(
              "global loads of a scheduling region"),
     cl::init(false), cl::Hidden);
 
+static cl::opt<bool> AsyncDMAKeepLoadOrderRelaxedOpt(
+    "amdgpu-async-dma-keep-load-order-relaxed",
+    cl::desc("With -amdgpu-async-dma-keep-load-order, order an ordinary global "
+             "load only after the first async LDS DMA of the latest DMA run "
+             "before it"),
+    cl::init(false), cl::Hidden);
+
+static cl::opt<bool> AsyncMarkExitLatencySeeBundlesOpt(
+    "amdgpu-asyncmark-exit-latency-see-bundles",
+    cl::desc("With -amdgpu-asyncmark-exit-latency-mixed-or-staged, also count "
+             "ordinary global loads inside post-RA bundles"),
+    cl::init(false), cl::Hidden);
+
 static cl::opt<unsigned> BarrierSignalWaitLatencyOpt(
     "amdgpu-barrier-signal-wait-latency",
     cl::desc("Synthetic latency between S_BARRIER_SIGNAL and S_BARRIER_WAIT "
@@ -229,6 +242,27 @@ static void keepAsyncDMALoadOrder(ScheduleDAGInstrs *DAG,
   bool HasLoad = llvm::any_of(Ordered, [](auto &P) { return !P.second; });
   if (!HasDMA || !HasLoad)
     return;
+  if (AsyncDMAKeepLoadOrderRelaxedOpt) {
+    // A DMA still follows every earlier ordinary load, but an ordinary load
+    // only follows the first DMA of the latest DMA run before it, so it may
+    // issue between DMAs that the memory pipeline throttle spreads out.
+    SUnit *RunFirstDMA = nullptr;
+    bool PrevIsDMA = false;
+    for (unsigned J = 0, E = Ordered.size(); J != E; ++J) {
+      auto [SU, IsDMA] = Ordered[J];
+      if (IsDMA) {
+        if (!PrevIsDMA)
+          RunFirstDMA = SU;
+        for (unsigned I = 0; I != J; ++I)
+          if (!Ordered[I].second)
+            DAG->addEdge(SU, SDep(Ordered[I].first, SDep::Artificial));
+      } else if (RunFirstDMA) {
+        DAG->addEdge(SU, SDep(RunFirstDMA, SDep::Artificial));
+      }
+      PrevIsDMA = IsDMA;
+    }
+    return;
+  }
   for (unsigned I = 0, E = Ordered.size(); I != E; ++I)
     for (unsigned J = I + 1; J != E; ++J)
       if (Ordered[I].second != Ordered[J].second)
@@ -398,11 +432,20 @@ void BarrierLatency::apply(ScheduleDAGInstrs *DAG) {
   bool ExitLatencyRegion = true;
   if (AsyncMarkExitLatencyMixedOrStagedOpt) {
     bool HasOrdinaryVMEMLoad = false;
+    auto IsOrdinaryVMEMLoad = [&](const MachineInstr &MI) {
+      return MI.mayLoad() && SIInstrInfo::isVMEM(MI) &&
+             !SIInstrInfo::isLDSDMA(MI) && !TII->mayAccessScratch(MI);
+    };
     for (SUnit &SU : DAG->SUnits) {
       const MachineInstr &MI = *SU.getInstr();
-      if (MI.mayLoad() && SIInstrInfo::isVMEM(MI) && !SIInstrInfo::isLDSDMA(MI) &&
-          !TII->mayAccessScratch(MI))
+      if (IsOrdinaryVMEMLoad(MI))
         HasOrdinaryVMEMLoad = true;
+      if (AsyncMarkExitLatencySeeBundlesOpt && MI.isBundle())
+        for (auto I = std::next(MI.getIterator()),
+                  E = MI.getParent()->instr_end();
+             I != E && I->isBundledWithPred(); ++I)
+          if (IsOrdinaryVMEMLoad(*I))
+            HasOrdinaryVMEMLoad = true;
     }
     ExitLatencyRegion = HasOrdinaryVMEMLoad || RetiredAnyAsyncDMA;
   }
