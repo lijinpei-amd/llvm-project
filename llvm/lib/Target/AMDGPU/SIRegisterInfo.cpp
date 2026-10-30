@@ -482,10 +482,11 @@ SIRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
   // equivalent AV class. If used one, the verifier will crash after
   // RegBankSelect in the GISel flow. The aligned regclasses are not fully given
   // until Instruction selection.
-  // Under "amdgpu-ds-read-agpr" an AGPR class was chosen on purpose (see
-  // AMDGPUPrepareAGPRAlloc). Inflating it to AV would let the coalescer discharge
-  // the copy by moving the definition back into a VGPR, undoing the transform.
-  // VGPR classes still inflate normally, so only the forced registers are pinned.
+  // Under "amdgpu-ds-read-agpr" an AGPR class was chosen on purpose for an LDS
+  // read, a buffer load, or its propagation chain (see AMDGPUPrepareAGPRAlloc).
+  // Inflating it to AV would let the coalescer move the definition back into a
+  // VGPR, undoing the transform. VGPR classes still inflate normally, so only
+  // the forced registers are pinned.
   if (isAGPRClass(RC) &&
       MF.getFunction().hasFnAttribute("amdgpu-ds-read-agpr"))
     return RC;
@@ -538,12 +539,10 @@ SIRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
   return TargetRegisterInfo::getLargestLegalSuperClass(RC, MF);
 }
 
-/// Under "amdgpu-ds-read-agpr" the LDS reads were deliberately given AGPR
-/// destinations, each feeding a COPY back to a VGPR (see AMDGPUPrepareAGPRAlloc).
-/// Coalescing that copy is exactly the wrong move: the joined register has to live
-/// in one file or the other, and the coalescer resolves it by pulling the
-/// definition back into a VGPR, silently undoing the transform. Refuse to join
-/// across the AGPR/VGPR boundary so the forced destinations survive to allocation.
+/// Under "amdgpu-ds-read-agpr" load results were deliberately given AGPR
+/// destinations (see AMDGPUPrepareAGPRAlloc). Coalescing across the AGPR/VGPR
+/// boundary can pull a definition back into a VGPR and silently undo the
+/// transform, so keep the forced destinations pinned through allocation.
 bool SIRegisterInfo::shouldCoalesce(MachineInstr *MI,
                                     const TargetRegisterClass *SrcRC,
                                     unsigned SubReg,
