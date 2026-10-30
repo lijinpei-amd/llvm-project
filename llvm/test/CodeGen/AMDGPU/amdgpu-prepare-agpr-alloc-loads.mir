@@ -1,0 +1,299 @@
+# Test AGPR retargeting for LDS and MUBUF load propagation components.
+#
+# RUN: llc -mtriple=amdgpu9.50-amd-amdhsa -amdgpu-ds-read-agpr -run-pass=amdgpu-prepare-agpr-alloc -o - %s | FileCheck --check-prefix=ENABLED %s
+# RUN: llc -mtriple=amdgpu9.50-amd-amdhsa -amdgpu-ds-read-agpr -run-pass=amdgpu-prepare-agpr-alloc,amdgpu-prepare-agpr-alloc -o - %s | FileCheck --check-prefix=ENABLED %s
+# RUN: llc -mtriple=amdgpu9.50-amd-amdhsa -run-pass=amdgpu-prepare-agpr-alloc -o - %s | FileCheck --check-prefix=DISABLED %s
+
+# An LDS read used directly as an MFMA B operand is narrowed to AGPRs through
+# the same path as a buffer load.
+---
+name:            ds_read_direct_mfma_src1
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    ; ENABLED-LABEL: name: ds_read_direct_mfma_src1
+    ; ENABLED: %load:areg_128_align2 = DS_READ_B128_gfx9
+    ; ENABLED: %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %src0, %load,
+    ; DISABLED-LABEL: name: ds_read_direct_mfma_src1
+    ; DISABLED: %load:av_128_align2 = DS_READ_B128_gfx9
+    ; DISABLED: %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %src0, %load,
+    %addr:vgpr_32 = IMPLICIT_DEF
+    %src0:av_128_align2 = IMPLICIT_DEF
+    %load:av_128_align2 = DS_READ_B128_gfx9 %addr, 0, 0, implicit $exec
+    %acc:areg_128_align2 = IMPLICIT_DEF
+    %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %src0, %load, %acc, 0, 0, implicit $mode, implicit $exec
+    S_ENDPGM 0, implicit %dst
+...
+
+# An AGPR read is classified as MAI but is not an MFMA. Do not move the LDS
+# result to AGPRs just to feed an explicit cross-register-file transfer.
+---
+name:            ds_read_accvgpr_read
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    ; ENABLED-LABEL: name: ds_read_accvgpr_read
+    ; ENABLED: %load:av_32 = DS_READ_B32_gfx9
+    ; ENABLED-NEXT: %to_agpr:agpr_32 = COPY %load
+    ; ENABLED-NEXT: %read:vgpr_32 = V_ACCVGPR_READ_B32_e64 %to_agpr,
+    ; DISABLED-LABEL: name: ds_read_accvgpr_read
+    ; DISABLED: %load:av_32 = DS_READ_B32_gfx9
+    ; DISABLED-NEXT: %to_agpr:agpr_32 = COPY %load
+    ; DISABLED-NEXT: %read:vgpr_32 = V_ACCVGPR_READ_B32_e64 %to_agpr,
+    %addr:vgpr_32 = IMPLICIT_DEF
+    %load:av_32 = DS_READ_B32_gfx9 %addr, 0, 0, implicit $exec
+    %to_agpr:agpr_32 = COPY %load
+    %read:vgpr_32 = V_ACCVGPR_READ_B32_e64 %to_agpr, implicit $exec
+    S_ENDPGM 0, implicit %read
+...
+
+# This is the B2 kernel shape: pairs of b128 LDS reads are assembled into
+# 256-bit MFMA operands. Each propagation component, including both reads and
+# its REG_SEQUENCE result, must be narrowed together.
+---
+name:            ds_read_b128_reg_sequences_mfma
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    ; ENABLED-LABEL: name: ds_read_b128_reg_sequences_mfma
+    ; ENABLED: %a_low:areg_128_align2 = DS_READ_B128_gfx9
+    ; ENABLED-NEXT: %a_high:areg_128_align2 = DS_READ_B128_gfx9
+    ; ENABLED-NEXT: %b_low:areg_128_align2 = DS_READ_B128_gfx9
+    ; ENABLED-NEXT: %b_high:areg_128_align2 = DS_READ_B128_gfx9
+    ; ENABLED-NEXT: %src0:areg_256_align2 = REG_SEQUENCE %a_low.sub0, %subreg.sub0, %a_low.sub1, %subreg.sub1, %a_low.sub2, %subreg.sub2, %a_low.sub3, %subreg.sub3, %a_high.sub0, %subreg.sub4, %a_high.sub1, %subreg.sub5, %a_high.sub2, %subreg.sub6, %a_high.sub3, %subreg.sub7
+    ; ENABLED-NEXT: %src1:areg_256_align2 = REG_SEQUENCE %b_low.sub0, %subreg.sub0, %b_low.sub1, %subreg.sub1, %b_low.sub2, %subreg.sub2, %b_low.sub3, %subreg.sub3, %b_high.sub0, %subreg.sub4, %b_high.sub1, %subreg.sub5, %b_high.sub2, %subreg.sub6, %b_high.sub3, %subreg.sub7
+    ; ENABLED: %dst:vreg_128_align2 = nofpexcept V_MFMA_SCALE_F32_16X16X128_F8F6F4_f8_f8_vgprcd_e64 %src0, %src1,
+    ; DISABLED-LABEL: name: ds_read_b128_reg_sequences_mfma
+    ; DISABLED: %a_low:av_128_align2 = DS_READ_B128_gfx9
+    ; DISABLED-NEXT: %a_high:av_128_align2 = DS_READ_B128_gfx9
+    ; DISABLED-NEXT: %b_low:av_128_align2 = DS_READ_B128_gfx9
+    ; DISABLED-NEXT: %b_high:av_128_align2 = DS_READ_B128_gfx9
+    ; DISABLED-NEXT: %src0:av_256_align2 = REG_SEQUENCE %a_low.sub0, %subreg.sub0, %a_low.sub1, %subreg.sub1, %a_low.sub2, %subreg.sub2, %a_low.sub3, %subreg.sub3, %a_high.sub0, %subreg.sub4, %a_high.sub1, %subreg.sub5, %a_high.sub2, %subreg.sub6, %a_high.sub3, %subreg.sub7
+    ; DISABLED-NEXT: %src1:av_256_align2 = REG_SEQUENCE %b_low.sub0, %subreg.sub0, %b_low.sub1, %subreg.sub1, %b_low.sub2, %subreg.sub2, %b_low.sub3, %subreg.sub3, %b_high.sub0, %subreg.sub4, %b_high.sub1, %subreg.sub5, %b_high.sub2, %subreg.sub6, %b_high.sub3, %subreg.sub7
+    ; DISABLED: %dst:vreg_128_align2 = nofpexcept V_MFMA_SCALE_F32_16X16X128_F8F6F4_f8_f8_vgprcd_e64 %src0, %src1,
+    %addr:vgpr_32 = IMPLICIT_DEF
+    %a_low:av_128_align2 = DS_READ_B128_gfx9 %addr, 0, 0, implicit $exec
+    %a_high:av_128_align2 = DS_READ_B128_gfx9 %addr, 64, 0, implicit $exec
+    %b_low:av_128_align2 = DS_READ_B128_gfx9 %addr, 4224, 0, implicit $exec
+    %b_high:av_128_align2 = DS_READ_B128_gfx9 %addr, 4288, 0, implicit $exec
+    %src0:av_256_align2 = REG_SEQUENCE %a_low.sub0, %subreg.sub0, %a_low.sub1, %subreg.sub1, %a_low.sub2, %subreg.sub2, %a_low.sub3, %subreg.sub3, %a_high.sub0, %subreg.sub4, %a_high.sub1, %subreg.sub5, %a_high.sub2, %subreg.sub6, %a_high.sub3, %subreg.sub7
+    %src1:av_256_align2 = REG_SEQUENCE %b_low.sub0, %subreg.sub0, %b_low.sub1, %subreg.sub1, %b_low.sub2, %subreg.sub2, %b_low.sub3, %subreg.sub3, %b_high.sub0, %subreg.sub4, %b_high.sub1, %subreg.sub5, %b_high.sub2, %subreg.sub6, %b_high.sub3, %subreg.sub7
+    %scale0:vgpr_32 = IMPLICIT_DEF
+    %scale1:vgpr_32 = IMPLICIT_DEF
+    %dst:vreg_128_align2 = nofpexcept V_MFMA_SCALE_F32_16X16X128_F8F6F4_f8_f8_vgprcd_e64 %src0, %src1, 0, 0, 0, %scale0, %scale1, 0, 0, implicit $mode, implicit $exec
+    S_ENDPGM 0, implicit %dst
+...
+
+# A buffer load used directly as an MFMA B operand is narrowed to AGPRs.
+---
+name:            buffer_load_direct_mfma_src1
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    ; ENABLED-LABEL: name: buffer_load_direct_mfma_src1
+    ; ENABLED: %load:areg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; ENABLED: %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %src0, %load,
+    ; DISABLED-LABEL: name: buffer_load_direct_mfma_src1
+    ; DISABLED: %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; DISABLED: %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %src0, %load,
+    %addr:vgpr_32 = IMPLICIT_DEF
+    %rsrc:sgpr_128 = IMPLICIT_DEF
+    %src0:av_128_align2 = IMPLICIT_DEF
+    %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN %addr, %rsrc, 0, 0, 0, 0, implicit $exec :: (load (s128), addrspace 8)
+    %acc:areg_128_align2 = IMPLICIT_DEF
+    %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %src0, %load, %acc, 0, 0, implicit $mode, implicit $exec
+    S_ENDPGM 0, implicit %dst
+...
+
+# A pure VGPR class on the load result is retargeted directly when its subregs
+# only feed MFMA A/B operands. No cross-register-file COPY is needed.
+---
+name:            buffer_load_pure_vgpr_subregs
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    ; ENABLED-LABEL: name: buffer_load_pure_vgpr_subregs
+    ; ENABLED: %load:areg_64_align2 = BUFFER_LOAD_DWORDX2_OFFEN
+    ; ENABLED: %dst:areg_128_align2 = nofpexcept V_MFMA_F32_4X4X1F32_e64 %load.sub0, %load.sub1,
+    ; DISABLED-LABEL: name: buffer_load_pure_vgpr_subregs
+    ; DISABLED: %load:vreg_64_align2 = BUFFER_LOAD_DWORDX2_OFFEN
+    ; DISABLED: %dst:areg_128_align2 = nofpexcept V_MFMA_F32_4X4X1F32_e64 %load.sub0, %load.sub1,
+    %addr:vgpr_32 = IMPLICIT_DEF
+    %rsrc:sgpr_128 = IMPLICIT_DEF
+    %load:vreg_64_align2 = BUFFER_LOAD_DWORDX2_OFFEN %addr, %rsrc, 0, 0, 0, 0, implicit $exec :: (load (s64), addrspace 8)
+    %acc:areg_128_align2 = IMPLICIT_DEF
+    %dst:areg_128_align2 = nofpexcept V_MFMA_F32_4X4X1F32_e64 %load.sub0, %load.sub1, %acc, 0, 0, 0, implicit $mode, implicit $exec
+    S_ENDPGM 0, implicit %dst
+...
+
+# This is the shape produced by the Gluon kernel: split a dwordx4 load into
+# scalar subregisters, carry them around a loop, rebuild the MFMA source, and
+# repeat with a load on the backedge.
+---
+name:            buffer_load_copy_phi_reg_sequence_mfma
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    successors: %bb.1(0x80000000)
+
+    ; ENABLED-LABEL: name: buffer_load_copy_phi_reg_sequence_mfma
+    ; ENABLED: %load0:areg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; ENABLED-NEXT: %init0:agpr_32 = COPY %load0.sub0
+    ; ENABLED-NEXT: %init1:agpr_32 = COPY %load0.sub1
+    ; ENABLED-NEXT: %init2:agpr_32 = COPY %load0.sub2
+    ; ENABLED-NEXT: %init3:agpr_32 = COPY %load0.sub3
+    ; DISABLED-LABEL: name: buffer_load_copy_phi_reg_sequence_mfma
+    ; DISABLED: %load0:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; DISABLED-NEXT: %init0:av_32 = COPY %load0.sub0
+    ; DISABLED-NEXT: %init1:av_32 = COPY %load0.sub1
+    ; DISABLED-NEXT: %init2:av_32 = COPY %load0.sub2
+    ; DISABLED-NEXT: %init3:av_32 = COPY %load0.sub3
+    %addr0:vgpr_32 = IMPLICIT_DEF
+    %rsrc:sgpr_128 = IMPLICIT_DEF
+    %load0:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN %addr0, %rsrc, 0, 0, 0, 0, implicit $exec :: (load (s128), addrspace 8)
+    %init0:av_32 = COPY %load0.sub0
+    %init1:av_32 = COPY %load0.sub1
+    %init2:av_32 = COPY %load0.sub2
+    %init3:av_32 = COPY %load0.sub3
+    S_BRANCH %bb.1
+
+  bb.1:
+    successors: %bb.1(0x40000000), %bb.2(0x40000000)
+
+    ; ENABLED: %p0:agpr_32 = PHI %init0, %bb.0, %next0, %bb.1
+    ; ENABLED-NEXT: %p1:agpr_32 = PHI %init1, %bb.0, %next1, %bb.1
+    ; ENABLED-NEXT: %p2:agpr_32 = PHI %init2, %bb.0, %next2, %bb.1
+    ; ENABLED-NEXT: %p3:agpr_32 = PHI %init3, %bb.0, %next3, %bb.1
+    ; ENABLED-NEXT: %mfma_src:areg_128_align2 = REG_SEQUENCE %p0, %subreg.sub0, %p1, %subreg.sub1, %p2, %subreg.sub2, %p3, %subreg.sub3
+    ; ENABLED: %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %mfma_src,
+    ; ENABLED: %load1:areg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; ENABLED-NEXT: %next0:agpr_32 = COPY %load1.sub0
+    ; ENABLED-NEXT: %next1:agpr_32 = COPY %load1.sub1
+    ; ENABLED-NEXT: %next2:agpr_32 = COPY %load1.sub2
+    ; ENABLED-NEXT: %next3:agpr_32 = COPY %load1.sub3
+    ; DISABLED: %p0:av_32 = PHI %init0, %bb.0, %next0, %bb.1
+    ; DISABLED-NEXT: %p1:av_32 = PHI %init1, %bb.0, %next1, %bb.1
+    ; DISABLED-NEXT: %p2:av_32 = PHI %init2, %bb.0, %next2, %bb.1
+    ; DISABLED-NEXT: %p3:av_32 = PHI %init3, %bb.0, %next3, %bb.1
+    ; DISABLED-NEXT: %mfma_src:av_128_align2 = REG_SEQUENCE %p0, %subreg.sub0, %p1, %subreg.sub1, %p2, %subreg.sub2, %p3, %subreg.sub3
+    ; DISABLED: %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %mfma_src,
+    ; DISABLED: %load1:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; DISABLED-NEXT: %next0:av_32 = COPY %load1.sub0
+    ; DISABLED-NEXT: %next1:av_32 = COPY %load1.sub1
+    ; DISABLED-NEXT: %next2:av_32 = COPY %load1.sub2
+    ; DISABLED-NEXT: %next3:av_32 = COPY %load1.sub3
+    %p0:av_32 = PHI %init0, %bb.0, %next0, %bb.1
+    %p1:av_32 = PHI %init1, %bb.0, %next1, %bb.1
+    %p2:av_32 = PHI %init2, %bb.0, %next2, %bb.1
+    %p3:av_32 = PHI %init3, %bb.0, %next3, %bb.1
+    %mfma_src:av_128_align2 = REG_SEQUENCE %p0, %subreg.sub0, %p1, %subreg.sub1, %p2, %subreg.sub2, %p3, %subreg.sub3
+    %src1:av_128_align2 = IMPLICIT_DEF
+    %acc:areg_128_align2 = IMPLICIT_DEF
+    %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %mfma_src, %src1, %acc, 0, 0, implicit $mode, implicit $exec
+    %addr1:vgpr_32 = IMPLICIT_DEF
+    %load1:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN %addr1, %rsrc, 0, 16, 0, 0, implicit $exec :: (load (s128), addrspace 8)
+    %next0:av_32 = COPY %load1.sub0
+    %next1:av_32 = COPY %load1.sub1
+    %next2:av_32 = COPY %load1.sub2
+    %next3:av_32 = COPY %load1.sub3
+    S_CBRANCH_SCC1 %bb.1, implicit undef $scc
+    S_BRANCH %bb.2
+
+  bb.2:
+    S_ENDPGM 0, implicit %dst
+...
+
+# A non-MFMA use anywhere in the transparent-use graph makes the buffer load
+# ineligible, so both enabled and disabled runs keep the AV classes.
+---
+name:            buffer_load_external_use
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    ; ENABLED-LABEL: name: buffer_load_external_use
+    ; ENABLED: %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; ENABLED-NEXT: %piece:av_32 = COPY %load.sub0
+    ; ENABLED: %mfma_src:av_128_align2 = REG_SEQUENCE %piece, %subreg.sub0,
+    ; ENABLED: %external:vgpr_32 = COPY %piece
+    ; DISABLED-LABEL: name: buffer_load_external_use
+    ; DISABLED: %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; DISABLED-NEXT: %piece:av_32 = COPY %load.sub0
+    ; DISABLED: %mfma_src:av_128_align2 = REG_SEQUENCE %piece, %subreg.sub0,
+    ; DISABLED: %external:vgpr_32 = COPY %piece
+    %addr:vgpr_32 = IMPLICIT_DEF
+    %rsrc:sgpr_128 = IMPLICIT_DEF
+    %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN %addr, %rsrc, 0, 0, 0, 0, implicit $exec :: (load (s128), addrspace 8)
+    %piece:av_32 = COPY %load.sub0
+    %other0:av_32 = IMPLICIT_DEF
+    %other1:av_32 = IMPLICIT_DEF
+    %other2:av_32 = IMPLICIT_DEF
+    %mfma_src:av_128_align2 = REG_SEQUENCE %piece, %subreg.sub0, %other0, %subreg.sub1, %other1, %subreg.sub2, %other2, %subreg.sub3
+    %src1:av_128_align2 = IMPLICIT_DEF
+    %acc:areg_128_align2 = IMPLICIT_DEF
+    %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %mfma_src, %src1, %acc, 0, 0, implicit $mode, implicit $exec
+    %external:vgpr_32 = COPY %piece
+    %sum:vgpr_32 = V_ADD_U32_e32 1, %external, implicit $exec
+    S_ENDPGM 0, implicit %dst, implicit %sum
+...
+
+# Rewrite inline immediates to their AV pseudo before analyzing the component,
+# so the load and all of its inputs reach their final AGPR classes in one run.
+---
+name:            buffer_load_inline_immediate_component
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    ; ENABLED-LABEL: name: buffer_load_inline_immediate_component
+    ; ENABLED: %load:areg_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; ENABLED-NEXT: %piece:agpr_32 = COPY %load.sub0
+    ; ENABLED-NEXT: %inline:agpr_32 = AV_MOV_B32_IMM_PSEUDO 0, implicit $exec
+    ; ENABLED: %mfma_src:areg_128_align2 = REG_SEQUENCE %piece, %subreg.sub0, %inline, %subreg.sub1,
+    ; DISABLED-LABEL: name: buffer_load_inline_immediate_component
+    ; DISABLED: %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; DISABLED-NEXT: %piece:av_32 = COPY %load.sub0
+    ; DISABLED-NEXT: %inline:vgpr_32 = AV_MOV_B32_IMM_PSEUDO 0, implicit $exec
+    ; DISABLED: %mfma_src:av_128_align2 = REG_SEQUENCE %piece, %subreg.sub0, %inline, %subreg.sub1,
+    %addr:vgpr_32 = IMPLICIT_DEF
+    %rsrc:sgpr_128 = IMPLICIT_DEF
+    %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN %addr, %rsrc, 0, 0, 0, 0, implicit $exec :: (load (s128), addrspace 8)
+    %piece:av_32 = COPY %load.sub0
+    %inline:vgpr_32 = V_MOV_B32_e32 0, implicit $exec
+    %other0:av_32 = IMPLICIT_DEF
+    %other1:av_32 = IMPLICIT_DEF
+    %mfma_src:av_128_align2 = REG_SEQUENCE %piece, %subreg.sub0, %inline, %subreg.sub1, %other0, %subreg.sub2, %other1, %subreg.sub3
+    %src1:av_128_align2 = IMPLICIT_DEF
+    %acc:areg_128_align2 = IMPLICIT_DEF
+    %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %mfma_src, %src1, %acc, 0, 0, implicit $mode, implicit $exec
+    S_ENDPGM 0, implicit %dst
+...
+
+# Even when every external consumer is an MFMA source, reject the whole
+# component if one value has a target-specific VGPR-only producer.
+---
+name:            buffer_load_vgpr_only_producer
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    ; ENABLED-LABEL: name: buffer_load_vgpr_only_producer
+    ; ENABLED: %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; ENABLED-NEXT: %piece:av_32 = COPY %load.sub0
+    ; ENABLED-NEXT: %vgpr_only:vgpr_32 = V_MOV_B32_e32 65, implicit $exec
+    ; ENABLED: %mfma_src:av_128_align2 = REG_SEQUENCE %piece, %subreg.sub0, %vgpr_only, %subreg.sub1,
+    ; DISABLED-LABEL: name: buffer_load_vgpr_only_producer
+    ; DISABLED: %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN
+    ; DISABLED-NEXT: %piece:av_32 = COPY %load.sub0
+    ; DISABLED-NEXT: %vgpr_only:vgpr_32 = V_MOV_B32_e32 65, implicit $exec
+    ; DISABLED: %mfma_src:av_128_align2 = REG_SEQUENCE %piece, %subreg.sub0, %vgpr_only, %subreg.sub1,
+    %addr:vgpr_32 = IMPLICIT_DEF
+    %rsrc:sgpr_128 = IMPLICIT_DEF
+    %load:av_128_align2 = BUFFER_LOAD_DWORDX4_OFFEN %addr, %rsrc, 0, 0, 0, 0, implicit $exec :: (load (s128), addrspace 8)
+    %piece:av_32 = COPY %load.sub0
+    %vgpr_only:vgpr_32 = V_MOV_B32_e32 65, implicit $exec
+    %other0:av_32 = IMPLICIT_DEF
+    %other1:av_32 = IMPLICIT_DEF
+    %mfma_src:av_128_align2 = REG_SEQUENCE %piece, %subreg.sub0, %vgpr_only, %subreg.sub1, %other0, %subreg.sub2, %other1, %subreg.sub3
+    %src1:av_128_align2 = IMPLICIT_DEF
+    %acc:areg_128_align2 = IMPLICIT_DEF
+    %dst:areg_128_align2 = nofpexcept V_MFMA_F32_16X16X128_F8F6F4_f4_f4_e64 %mfma_src, %src1, %acc, 0, 0, implicit $mode, implicit $exec
+    S_ENDPGM 0, implicit %dst
+...
