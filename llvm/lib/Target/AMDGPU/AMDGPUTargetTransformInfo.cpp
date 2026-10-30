@@ -1031,13 +1031,16 @@ InstructionCost GCNTTIImpl::getVectorInstrCost(
       // TODO: Extracts are free too.
       if (EltSize == 1 && Opcode == Instruction::InsertElement)
         return TargetTransformInfo::TCC_Free;
-      // Extract element sequences of consecutive i8 values that match a
-      // register size are free most likely. It is not possible to know
-      // if this extract is part of a consecutive sequence so this may
-      // apply more generally.
       if (Opcode == Instruction::ExtractElement && EltSize == 8) {
         if (auto *FVTy = dyn_cast<FixedVectorType>(ValTy)) {
           unsigned NumElts = FVTy->getNumElements();
+          // Extracting the sole element of a singleton vector is free.
+          if (NumElts == 1)
+            return 0;
+          // Extract element sequences of consecutive i8 values that match a
+          // register size are free most likely. It is not possible to know
+          // if this extract is part of a consecutive sequence so this may
+          // apply more generally.
           if (NumElts >= 4 && isPowerOf2_32(NumElts))
             return 0;
         }
