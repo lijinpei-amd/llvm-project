@@ -66,6 +66,24 @@ def Write4PassDGEMM : SchedWrite;
 def Write8PassDGEMM : SchedWrite;
 def Write16PassDGEMM : SchedWrite;
 
+// gfx942 and gfx950 mAI instructions, by how long they hold VALU and PK_F32/DOT
+// issue (see GFX940MFMAWriteRes). XDL has A/B sources of up to 8 bytes, XDL16B
+// a 16-byte B source, XDL2x an A source of 16 or 24 bytes, and XDL2x32B a
+// 32-byte source.
+foreach Passes = [2, 4, 8, 16] in
+def Write#Passes#PassXDL : SchedWrite;
+foreach Passes = [4, 8] in {
+def Write#Passes#PassXDL16B : SchedWrite;
+def Write#Passes#PassXDL2x : SchedWrite;
+}
+foreach Passes = [4, 8, 16] in
+def Write#Passes#PassXDL2x32B : SchedWrite;
+foreach Passes = [2, 8, 16] in
+def Write#Passes#PassSGEMM : SchedWrite;
+
+// PK_F32 and DOT on gfx942 and gfx950.
+def WritePackedF32OrDOT : SchedWrite;
+
 // WMMA/SWMMA instructions
 def WriteXDL1PassWMMA : SchedWrite;
 def WriteXDL2PassWMMA : SchedWrite;
@@ -124,6 +142,14 @@ def HWRC   : ProcResource<1> { // Register destination cache
 def HWXDL   : ProcResource<1> { // MFMA CU
   let BufferSize = 0;
 }
+// On gfx942 and gfx950, an MFMA holds HWXDLVALUHold until the first cycle a
+// VALU can issue after it, and HWXDLPackedHold until the first cycle a PK_F32
+// or DOT can, counting from its own issue. It acquires them at the cycle it
+// releases them, so they cost nothing in the machine scheduler; two units keep
+// llvm-mca and the MachinePipeliner, which ignore AcquireAtCycles, from
+// serializing back-to-back MFMAs on them.
+def HWXDLVALUHold : ProcResource<2>;
+def HWXDLPackedHold : ProcResource<2>;
 
 class HWWriteRes<SchedWrite write, list<ProcResourceKind> resources,
                  int latency> : WriteRes<write, resources> {
@@ -163,13 +189,6 @@ multiclass SICommonWriteRes {
   def : HWVALUWriteRes<WriteTrans32,       4>;
   def : HWVALUWriteRes<WriteQuarterRate32, 4>;
 
-  let ReleaseAtCycles = [4] in
-  def : HWVALUWriteRes<Write4PassDGEMM,    4>;
-  let ReleaseAtCycles = [8] in
-  def : HWVALUWriteRes<Write8PassDGEMM,    8>;
-  let ReleaseAtCycles = [16] in
-  def : HWVALUWriteRes<Write16PassDGEMM,  16>;
-
   let ReleaseAtCycles = [2] in
   def : HWWriteRes<Write2PassMAI,  [HWXDL], 2>;
   let ReleaseAtCycles = [4] in
@@ -197,6 +216,52 @@ multiclass SICommonWriteRes {
   // need to consume 2 or 4 more vgprs to be initialized before the acc
   // write sequence. Just assume worst case here.
   def : ReadAdvance<MIMFMARead, -4>;
+}
+
+class MFMAHoldWriteRes<SchedWrite write, ProcResourceKind pipe, int passes,
+                       int valuCycle, int packedCycle>
+    : HWWriteRes<write, [pipe, HWXDLVALUHold, HWXDLPackedHold], passes> {
+  let ReleaseAtCycles = [passes, valuCycle, packedCycle];
+  let AcquireAtCycles = [0, valuCycle, packedCycle];
+}
+
+// Measured on MI300X, MI308X with the peak TOPS limiter enabled, and MI350X.
+// With the limiter disabled, MI308X holds VALU until an XDL's passes end. An
+// XDL holds VALU until 1 + (widest A/B source in bytes) / 16, and PK_F32 and
+// DOT until NumPasses + 2, one cycle more for XDL2x (an A source of 16 bytes or
+// more). A scaled MFMA issued into an idle pipe holds both one cycle longer;
+// this models one issued behind another MFMA.
+class XDLWriteRes<SchedWrite write, int passes, int srcABytes, int srcBBytes>
+    : MFMAHoldWriteRes<write, HWXDL, passes,
+        !add(1, !div(!if(!gt(srcABytes, srcBBytes), srcABytes, srcBBytes), 16)),
+        !add(passes, !if(!ge(srcABytes, 16), 3, 2))>;
+
+// SGEMM and DGEMM hold every VALU until NumPasses + 2.
+class GEMMWriteRes<SchedWrite write, ProcResourceKind pipe, int passes>
+    : MFMAHoldWriteRes<write, pipe, passes, !add(passes, 2), !add(passes, 2)>;
+
+multiclass GFX940MFMAWriteRes {
+  let RetireOOO = 1 in { // llvm-mca specific flag
+  foreach Passes = [2, 4, 8, 16] in
+  def : XDLWriteRes<!cast<SchedWrite>("Write"#Passes#"PassXDL"), Passes, 8, 8>;
+  foreach Passes = [4, 8] in {
+  def : XDLWriteRes<!cast<SchedWrite>("Write"#Passes#"PassXDL16B"), Passes, 8,
+                    16>;
+  def : XDLWriteRes<!cast<SchedWrite>("Write"#Passes#"PassXDL2x"), Passes, 16,
+                    16>;
+  }
+  foreach Passes = [4, 8, 16] in
+  def : XDLWriteRes<!cast<SchedWrite>("Write"#Passes#"PassXDL2x32B"), Passes,
+                    32, 32>;
+  foreach Passes = [2, 8, 16] in
+  def : GEMMWriteRes<!cast<SchedWrite>("Write"#Passes#"PassSGEMM"), HWXDL,
+                     Passes>;
+  foreach Passes = [4, 8, 16] in
+  def : GEMMWriteRes<!cast<SchedWrite>("Write"#Passes#"PassDGEMM"), HWVALU,
+                     Passes>;
+
+  def : HWWriteRes<WritePackedF32OrDOT, [HWVALU, HWXDLPackedHold], 1>;
+  } // End RetireOOO = 1
 }
 
 def PredIsVGPR32Copy : SchedPredicate<[{TII->isVGPRCopy(*MI) && TII->getOpSize(*MI, 0) <= 32}]>;
@@ -265,6 +330,11 @@ def : HWVALUWriteRes<WriteDoubleCvt,   1>;
 def : HWVALUWriteRes<WriteTrans64,     4>;
 def : HWVALUWriteRes<WriteIntMul,      1>;
 def : HWVALUWriteRes<Write64Bit,       1>;
+
+let ReleaseAtCycles = [4] in
+def : HWVALUWriteRes<Write4PassDGEMM,    4>;
+let ReleaseAtCycles = [8] in
+def : HWVALUWriteRes<Write8PassDGEMM,    8>;
 } // End RetireOOO = 1
 
 def : InstRW<[WriteCopy], (instrs COPY)>;
@@ -289,25 +359,33 @@ def : HWVALUWriteRes<WriteTrans64,     4>;
 def : HWVALUWriteRes<WriteIntMul,      1>;
 def : HWVALUWriteRes<Write64Bit,       1>;
 
+defm : GFX940MFMAWriteRes;
+
 def : InstRW<[WriteCopy], (instrs COPY)>;
 def : InstRW<[Write64Bit], (instregex "^V_ACCVGPR_WRITE_B32_e64$")>;
-def : InstRW<[Write2PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_4X4X")>;
+def : InstRW<[WritePackedF32OrDOT],
+             (instregex "^V_PK_(ADD|FMA|MUL)_F32", "^V_PK_MOV_B32", "^V_DOT")>;
 
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X8X")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X16")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X32")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
+def : InstRW<[Write2PassSGEMM, MIMFMARead], (instregex "^V_MFMA_F32_4X4X1F32")>;
+def : InstRW<[Write2PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_4X4X[24]")>;
 
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X4XF")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X8")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X16")>;
-def : InstRW<[Write16PassMAI,  MIMFMARead], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
+def : InstRW<[Write4PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X8X")>;
+def : InstRW<[Write4PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X16")>;
+def : InstRW<[Write4PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X32")>;
+def : InstRW<[Write8PassSGEMM, MIMFMARead], (instregex "^V_MFMA_F32_16X16X[14]F32")>;
+def : InstRW<[Write8PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X4(F16|BF|I8)")>;
+
+def : InstRW<[Write8PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X4XF")>;
+def : InstRW<[Write8PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X8")>;
+def : InstRW<[Write8PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X16")>;
+def : InstRW<[Write16PassSGEMM, MIMFMARead], (instregex "^V_MFMA_F32_32X32X[12]F32")>;
+def : InstRW<[Write16PassXDL,  MIMFMARead], (instregex "^V_MFMA_.32_32X32X(2B|4F16|4B|4I)")>;
 
 def : InstRW<[Write4PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_4X4X")>;
 def : InstRW<[Write8PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_16X16X")>;
 
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_SMFMAC_.32_16X16X")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_SMFMAC_.32_32X32X")>;
+def : InstRW<[Write4PassXDL16B, MIMFMARead], (instregex "^V_SMFMAC_.32_16X16X")>;
+def : InstRW<[Write8PassXDL16B, MIMFMARead], (instregex "^V_SMFMAC_.32_32X32X")>;
 
 } // End SchedModel = SIDPGFX942FullSpeedModel
 
@@ -323,37 +401,55 @@ def : HWVALUWriteRes<WriteTrans64,     4>;
 def : HWVALUWriteRes<WriteIntMul,      1>;
 def : HWVALUWriteRes<Write64Bit,       1>;
 
+defm : GFX940MFMAWriteRes;
+
 def : InstRW<[WriteCopy], (instrs COPY)>;
 def : InstRW<[Write64Bit], (instregex "^V_ACCVGPR_WRITE_B32_e64$")>;
-def : InstRW<[Write2PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_4X4X")>;
+def : InstRW<[WritePackedF32OrDOT],
+             (instregex "^V_PK_(ADD|FMA|MUL)_F32", "^V_PK_MOV_B32", "^V_DOT")>;
 
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X8X")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X16")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X32")>;
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X64")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X[14][FBI]")>;
+def : InstRW<[Write2PassSGEMM, MIMFMARead], (instregex "^V_MFMA_F32_4X4X1F32")>;
+def : InstRW<[Write2PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_4X4X[24]")>;
 
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X4XF")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X8")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X16")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X32_")>;
-def : InstRW<[Write16PassMAI,  MIMFMARead], (instregex "^V_MFMA_.32_32X32X[124][FBI]")>;
+def : InstRW<[Write4PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X8X")>;
+def : InstRW<[Write4PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X16")>;
+def : InstRW<[Write4PassXDL,   MIMFMARead],
+             (instregex "^V_MFMA_F32_16X16X32_[BF][FP]8", "^V_MFMA_I32_16X16X32I8")>;
+def : InstRW<[Write4PassXDL2x, MIMFMARead], (instregex "^V_MFMA_F32_16X16X32_B?F16")>;
+def : InstRW<[Write4PassXDL2x, MIMFMARead], (instregex "^V_MFMA_.32_16X16X64")>;
+def : InstRW<[Write8PassSGEMM, MIMFMARead], (instregex "^V_MFMA_F32_16X16X[14]F32")>;
+def : InstRW<[Write8PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_16X16X4(F16|BF|I8)")>;
+
+def : InstRW<[Write8PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X4XF")>;
+def : InstRW<[Write8PassXDL,   MIMFMARead], (instregex "^V_MFMA_.32_32X32X8")>;
+def : InstRW<[Write8PassXDL,   MIMFMARead],
+             (instregex "^V_MFMA_F32_32X32X16_[BF][FP]8", "^V_MFMA_I32_32X32X16I8")>;
+def : InstRW<[Write8PassXDL2x, MIMFMARead], (instregex "^V_MFMA_F32_32X32X16_B?F16")>;
+def : InstRW<[Write8PassXDL2x, MIMFMARead], (instregex "^V_MFMA_.32_32X32X32_")>;
+def : InstRW<[Write16PassSGEMM, MIMFMARead], (instregex "^V_MFMA_F32_32X32X[12]F32")>;
+def : InstRW<[Write16PassXDL,  MIMFMARead], (instregex "^V_MFMA_.32_32X32X(2B|4F16|4B|4I)")>;
 
 def : InstRW<[Write4PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_4X4X")>;
 def : InstRW<[Write16PassDGEMM, MIMFMARead], (instregex "^V_MFMA_.64_16X16X")>;
 
-def : InstRW<[Write4PassMAI,   MIMFMARead], (instregex "^V_SMFMAC_.32_16X16X")>;
-def : InstRW<[Write8PassMAI,   MIMFMARead], (instregex "^V_SMFMAC_.32_32X32X")>;
+def : InstRW<[Write4PassXDL16B, MIMFMARead],
+             (instregex "^V_SMFMAC_.32_16X16X(32_|64_I8|64_[BF][FP]8)")>;
+def : InstRW<[Write4PassXDL2x32B, MIMFMARead],
+             (instregex "^V_SMFMAC_.32_16X16X(64_B?F16|128_)")>;
+def : InstRW<[Write8PassXDL16B, MIMFMARead],
+             (instregex "^V_SMFMAC_.32_32X32X(16_|32_I8|32_[BF][FP]8)")>;
+def : InstRW<[Write8PassXDL2x32B, MIMFMARead],
+             (instregex "^V_SMFMAC_.32_32X32X(32_B?F16|64_)")>;
 
 
 // If either matrix format is f8, the instruction takes 2x as many
 // cycles. TODO: This isn't reflected in MCA.
 def WriteMFMAScale_16X16X128_F8F6F4 : SchedWriteVariant<[
-    SchedVar<PredIsF8_MFMA_SCALE, [Write8PassMAI]>,
-    SchedVar<NoSchedPred, [Write4PassMAI]>]>;
+    SchedVar<PredIsF8_MFMA_SCALE, [Write8PassXDL2x32B]>,
+    SchedVar<NoSchedPred, [Write4PassXDL2x]>]>;
 def WriteMFMAScale_32X32X64_F8F6F4 : SchedWriteVariant<[
-    SchedVar<PredIsF8_MFMA_SCALE, [Write16PassMAI]>,
-    SchedVar<NoSchedPred, [Write8PassMAI]>]>;
+    SchedVar<PredIsF8_MFMA_SCALE, [Write16PassXDL2x32B]>,
+    SchedVar<NoSchedPred, [Write8PassXDL2x]>]>;
 
 def : InstRW<[WriteMFMAScale_16X16X128_F8F6F4, MIMFMARead],
        (instregex "^V_MFMA(_SCALE)?_.32_16X16X128_F8F6F4")>;

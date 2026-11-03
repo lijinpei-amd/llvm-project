@@ -572,7 +572,8 @@ unsigned CandidateHeuristics::getMaxBlockingCycles(const MCSchedClassDesc *SC,
                                      PE = SchedModel->getWriteProcResEnd(SC);
        PI != PE; ++PI) {
     ReleaseAtCycle =
-        std::max(ReleaseAtCycle, static_cast<unsigned>(PI->ReleaseAtCycle));
+        std::max(ReleaseAtCycle, static_cast<unsigned>(PI->ReleaseAtCycle -
+                                                       PI->AcquireAtCycle));
   }
   ReleaseAtCycle = std::max(ReleaseAtCycle, SII->getBlockingCycles(*MI));
   return ReleaseAtCycle;

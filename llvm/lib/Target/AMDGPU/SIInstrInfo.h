@@ -1861,6 +1861,10 @@ public:
   /// Get the repeat rate for a VALU instruction from the scheduling model.
   /// Returns 1 for regular VALU, >1 for long-latency VALU (packed, F64, etc.)
   unsigned getRepeatRate(const MachineInstr &MI) const;
+
+  /// Get the first cycle, counted from \p MFMA issuing at cycle 0, at which an
+  /// instruction with opcode \p Opc can issue after it on gfx942 or gfx950.
+  unsigned getCoIssueCycle(const MachineInstr &MFMA, unsigned Opc) const;
 };
 
 /// \brief Returns true if a reg:subreg pair P has a TRC class

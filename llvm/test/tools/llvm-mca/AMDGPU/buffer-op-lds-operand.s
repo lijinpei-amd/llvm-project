@@ -38,14 +38,18 @@ buffer_load_dwordx4 v18, s[8:11], 0 offen sc0 nt lds
 # CHECK-NEXT: [4]   - HWVALU
 # CHECK-NEXT: [5]   - HWVMEM
 # CHECK-NEXT: [6]   - HWXDL
+# CHECK-NEXT: [7.0] - HWXDLPackedHold
+# CHECK-NEXT: [7.1] - HWXDLPackedHold
+# CHECK-NEXT: [8.0] - HWXDLVALUHold
+# CHECK-NEXT: [8.1] - HWXDLVALUHold
 
 # CHECK:      Resource pressure per iteration:
-# CHECK-NEXT: [0]    [1]    [2]    [3]    [4]    [5]    [6]
-# CHECK-NEXT:  -      -      -      -      -     4.00    -
+# CHECK-NEXT: [0]    [1]    [2]    [3]    [4]    [5]    [6]    [7.0]  [7.1]  [8.0]  [8.1]
+# CHECK-NEXT:  -      -      -      -      -     4.00    -      -      -      -      -
 
 # CHECK:      Resource pressure by instruction:
-# CHECK-NEXT: [0]    [1]    [2]    [3]    [4]    [5]    [6]    Instructions:
-# CHECK-NEXT:  -      -      -      -      -     1.00    -     buffer_load_dword off, s[8:11], 0 lds
-# CHECK-NEXT:  -      -      -      -      -     1.00    -     buffer_load_dword v18, s[8:11], 0 offen lds
-# CHECK-NEXT:  -      -      -      -      -     1.00    -     buffer_load_dword v18, s[8:11], 0 idxen lds
-# CHECK-NEXT:  -      -      -      -      -     1.00    -     buffer_load_dwordx4 v18, s[8:11], 0 offen sc0 nt lds
+# CHECK-NEXT: [0]    [1]    [2]    [3]    [4]    [5]    [6]    [7.0]  [7.1]  [8.0]  [8.1]  Instructions:
+# CHECK-NEXT:  -      -      -      -      -     1.00    -      -      -      -      -     buffer_load_dword off, s[8:11], 0 lds
+# CHECK-NEXT:  -      -      -      -      -     1.00    -      -      -      -      -     buffer_load_dword v18, s[8:11], 0 offen lds
+# CHECK-NEXT:  -      -      -      -      -     1.00    -      -      -      -      -     buffer_load_dword v18, s[8:11], 0 idxen lds
+# CHECK-NEXT:  -      -      -      -      -     1.00    -      -      -      -      -     buffer_load_dwordx4 v18, s[8:11], 0 offen sc0 nt lds

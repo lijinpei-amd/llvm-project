@@ -34,12 +34,16 @@ buffer_store_dword v0, v1, s[0:3], 0 offen
 # CHECK-NEXT: [4]   - HWVALU
 # CHECK-NEXT: [5]   - HWVMEM
 # CHECK-NEXT: [6]   - HWXDL
+# CHECK-NEXT: [7.0] - HWXDLPackedHold
+# CHECK-NEXT: [7.1] - HWXDLPackedHold
+# CHECK-NEXT: [8.0] - HWXDLVALUHold
+# CHECK-NEXT: [8.1] - HWXDLVALUHold
 
 # CHECK:      Resource pressure per iteration:
-# CHECK-NEXT: [0]    [1]    [2]    [3]    [4]    [5]    [6]
-# CHECK-NEXT:  -      -      -      -      -     2.00    -
+# CHECK-NEXT: [0]    [1]    [2]    [3]    [4]    [5]    [6]    [7.0]  [7.1]  [8.0]  [8.1]
+# CHECK-NEXT:  -      -      -      -      -     2.00    -      -      -      -      -
 
 # CHECK:      Resource pressure by instruction:
-# CHECK-NEXT: [0]    [1]    [2]    [3]    [4]    [5]    [6]    Instructions:
-# CHECK-NEXT:  -      -      -      -      -     1.00    -     buffer_load_dwordx4 v[30:33], v4, s[0:3], 0 offen offset:4092
-# CHECK-NEXT:  -      -      -      -      -     1.00    -     buffer_store_dword v0, v1, s[0:3], 0 offen
+# CHECK-NEXT: [0]    [1]    [2]    [3]    [4]    [5]    [6]    [7.0]  [7.1]  [8.0]  [8.1]  Instructions:
+# CHECK-NEXT:  -      -      -      -      -     1.00    -      -      -      -      -     buffer_load_dwordx4 v[30:33], v4, s[0:3], 0 offen offset:4092
+# CHECK-NEXT:  -      -      -      -      -     1.00    -      -      -      -      -     buffer_store_dword v0, v1, s[0:3], 0 offen

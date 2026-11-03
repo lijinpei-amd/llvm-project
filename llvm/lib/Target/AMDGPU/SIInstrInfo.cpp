@@ -11986,10 +11986,44 @@ unsigned SIInstrInfo::getRepeatRate(const MachineInstr &MI) const {
            PI = SchedModel.getWriteProcResBegin(SCDesc),
            PE = SchedModel.getWriteProcResEnd(SCDesc);
        PI != PE; ++PI) {
-    RepeatRate = std::max(RepeatRate, (unsigned)PI->ReleaseAtCycle);
+    RepeatRate = std::max(RepeatRate,
+                          (unsigned)(PI->ReleaseAtCycle - PI->AcquireAtCycle));
   }
 
   return RepeatRate;
+}
+
+static unsigned getProcResourceIdx(const TargetSchedModel &SchedModel,
+                                   StringRef Name) {
+  for (unsigned I = 1, E = SchedModel.getNumProcResourceKinds(); I != E; ++I)
+    if (Name == SchedModel.getProcResource(I)->Name)
+      return I;
+  llvm_unreachable("no such processor resource");
+}
+
+unsigned SIInstrInfo::getCoIssueCycle(const MachineInstr &MFMA,
+                                      unsigned Opc) const {
+  assert(isMFMA(MFMA) && ST.hasGFX940Insts() &&
+         "expected a gfx942 or gfx950 MFMA");
+  // PK_F32 and DOT wait for HWXDLPackedHold, other VALU for HWXDLVALUHold.
+  unsigned PackedHold = getProcResourceIdx(SchedModel, "HWXDLPackedHold");
+  const MCSchedClassDesc *OpcSC =
+      SchedModel.getMCSchedModel()->getSchedClassDesc(get(Opc).getSchedClass());
+  bool IsPacked = any_of(make_range(SchedModel.getWriteProcResBegin(OpcSC),
+                                    SchedModel.getWriteProcResEnd(OpcSC)),
+                         [=](const MCWriteProcResEntry &PE) {
+                           return PE.ProcResourceIdx == PackedHold;
+                         });
+  unsigned Hold =
+      IsPacked ? PackedHold : getProcResourceIdx(SchedModel, "HWXDLVALUHold");
+
+  const MCSchedClassDesc *SC = SchedModel.resolveSchedClass(&MFMA);
+  for (const MCWriteProcResEntry &PE :
+       make_range(SchedModel.getWriteProcResBegin(SC),
+                  SchedModel.getWriteProcResEnd(SC)))
+    if (PE.ProcResourceIdx == Hold)
+      return PE.ReleaseAtCycle;
+  llvm_unreachable("MFMA has no co-issue hold in the scheduling model");
 }
 
 bool SIInstrInfo::isGlobalMemoryObject(const MachineInstr *MI) const {
