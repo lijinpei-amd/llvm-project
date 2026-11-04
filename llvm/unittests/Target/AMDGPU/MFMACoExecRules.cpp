@@ -115,7 +115,7 @@ public:
       EXPECT_EQ(getIssueStage(MFMA, V_FMA_F32_e64), C.VALU) << Name;
       EXPECT_EQ(getIssueStage(MFMA, V_PK_ADD_F16), C.VALU) << Name;
       EXPECT_EQ(getIssueStage(MFMA, V_PK_FMA_F32), C.PackedF32) << Name;
-      EXPECT_EQ(getIssueStage(MFMA, V_DOT2_F32_F16), C.VALU) << Name;
+      EXPECT_EQ(getIssueStage(MFMA, V_DOT2_F32_F16), C.PackedF32) << Name;
     }
   }
 
@@ -153,9 +153,9 @@ TEST_F(AMDGPUMFMACoExecRules, GFX942IssueStages) {
                    1);
   Test.checkPacked(V_MFMA_F32_16X16X16BF16_1K_vgprcd_e64,
                    {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32, V_DOT2_I32_I16},
-                   1);
+                   6);
   Test.checkPacked(V_MFMA_F32_32X32X8BF16_1K_vgprcd_e64,
-                   {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 1);
+                   {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 10);
   Test.checkPacked(V_MFMA_F32_16X16X4F32_vgprcd_e64,
                    {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 10);
   Test.check({
@@ -183,20 +183,20 @@ TEST_F(AMDGPUMFMACoExecRules, GFX950IssueStages) {
   MFMACoExecTest Test(std::move(TM));
   Test.checkPacked(
       V_MFMA_F32_16X16X16BF16_1K_vgprcd_e64,
-      {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32, V_DOT2C_F32_BF16_e32}, 1);
+      {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32, V_DOT2C_F32_BF16_e32}, 6);
   Test.checkPacked(V_MFMA_F32_32X32X8BF16_1K_vgprcd_e64,
-                   {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 1);
+                   {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 10);
   Test.checkPacked(V_MFMA_F32_16X16X4F32_vgprcd_e64,
                    {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 10);
   Test.checkPacked(
       V_MFMA_F32_16X16X32_BF16_vgprcd_e64,
-      {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32, V_DOT2C_F32_BF16_e32}, 2);
+      {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32, V_DOT2C_F32_BF16_e32}, 7);
   Test.checkPacked(V_MFMA_F32_16X16X32_BF16_vgprcd_e64,
                    {V_PK_FMA_F32, V_PK_MUL_F32, V_PK_ADD_F32, V_PK_MOV_B32}, 7);
   Test.checkPacked(V_MFMA_F32_16X16X128_F8F6F4_f8_f8_vgprcd_e64,
-                   {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 3);
+                   {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 11);
   Test.checkPacked(V_MFMA_SCALE_F32_16X16X128_F8F6F4_f8_f8_vgprcd_e64,
-                   {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 3);
+                   {V_DOT2C_F32_F16_e32, V_DOT4C_I32_I8_e32}, 11);
   Test.check({
       {V_MFMA_F32_16X16X16BF16_1K_vgprcd_e64, 0, 0, 1, 6},
       {V_MFMA_F32_4X4X4BF16_1K_vgprcd_e64, 0, 0, 1, 4},
@@ -230,7 +230,7 @@ TEST_F(AMDGPUMFMACoExecRules, GFX950IssueStages) {
 }
 
 // The scheduler keeps the SPG windows, permissive for MFMAs the SPG does not
-// list, with PK_F32 issuing wherever other VALU can.
+// list, with PK_F32 and DOT issuing wherever other VALU can.
 TEST_F(AMDGPUMFMACoExecRules, GFX950SchedulerWindows) {
   auto TM =
       createAMDGPUTargetMachine(Triple("amdgcn-amd-amdhsa"), "gfx950", "");
@@ -260,6 +260,7 @@ TEST_F(AMDGPUMFMACoExecRules, GFX950SchedulerWindows) {
     for (unsigned Stage = 0; Stage < Info.TotalWindow; ++Stage) {
       bool VALU = Info.canCoExec(CoExecMask::VALU, Stage);
       EXPECT_EQ(Info.canCoExec(CoExecMask::PK_F32, Stage), VALU) << Name;
+      EXPECT_EQ(Info.canCoExec(CoExecMask::DOT, Stage), VALU) << Name;
     }
   }
 }
@@ -301,6 +302,6 @@ TEST_F(AMDGPUMFMACoExecRules, CoExecMaskClasses) {
   };
   Check({V_PK_ADD_F32, V_PK_FMA_F32, V_PK_MOV_B32, V_PK_MUL_F32},
         CoExecMask::PK_F32);
-  Check({V_DOT2_F32_F16, V_DOT2C_F32_F16_e32}, CoExecMask::VALU);
+  Check({V_DOT2_F32_F16, V_DOT2C_F32_F16_e32}, CoExecMask::DOT);
   Check({V_FMA_F32_e64, V_PK_ADD_F16}, CoExecMask::VALU);
 }

@@ -54,12 +54,13 @@ enum class CoExecMask : uint16_t {
   WMMA = 1 << 7,  // Next WMMA (V stages only), or MFMA
   // V_PK_{ADD,FMA,MUL}_F32 and V_PK_MOV_B32
   PK_F32 = 1 << 8,
+  DOT = 1 << 9, // Dot products
   All = 0xFFFF,
 
   MEM = DS | VMEM | SMEM,
-  StageE0 = CTRL,                                     // Issue: control only
-  StageE = CTRL | SALU | MEM,                         // External: mem/salu
-  StageI = CTRL | SALU | MEM | VALU | PK_F32 | TRANS, // Internal: all ALU
+  StageE0 = CTRL,             // Issue: control only
+  StageE = CTRL | SALU | MEM, // External: mem/salu
+  StageI = CTRL | SALU | MEM | VALU | PK_F32 | DOT | TRANS, // Internal: all ALU
   // Internal + scaled-WMMA absorb: same as StageI but the next scaled
   // WMMA may issue here - its LD_SCALE consumes the I cycle and the matrix
   // multiply lands in the V slot that follows. Used for the last I before
@@ -160,7 +161,7 @@ inline CoExecMaskT getCoExecMask(InstructionFlavor F) {
 }
 
 /// Get the co-execution class of \p MI, which unlike the flavor's separates
-/// PK_F32 from other VALU.
+/// PK_F32 and DOT from other VALU.
 CoExecMaskT getCoExecMask(const MachineInstr &MI, const SIInstrInfo &SII);
 
 //===----------------------------------------------------------------------===//
@@ -220,6 +221,8 @@ inline const char *getCoExecMaskName(CoExecMaskT Mask) {
     return "WMMA";
   case CoExecMask::PK_F32:
     return "PK_F32";
+  case CoExecMask::DOT:
+    return "DOT";
   default:
     llvm_unreachable("Not a single instruction class");
   }
@@ -385,7 +388,7 @@ inline CoExecInfo CoExecInfo::build(unsigned UnitOccupancy,
 CoExecInfo getMFMACoExecInfo(unsigned Opcode);
 
 /// Get the measured co-issue windows of a gfx942 or gfx950 MFMA instruction,
-/// which unlike getMFMACoExecInfo() hold PK_F32 longer than other VALU.
+/// which unlike getMFMACoExecInfo() hold PK_F32 and DOT longer than other VALU.
 /// Stages count 4-clock cycles from the MFMA's issue. gfx942 timings are for
 /// MI300X, or MI308X with the peak TOPS limiter enabled; with the limiter
 /// disabled, MI308X holds VALU until an XDL's passes end. A scaled MFMA is

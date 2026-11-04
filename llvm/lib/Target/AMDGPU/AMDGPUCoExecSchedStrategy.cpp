@@ -388,10 +388,10 @@ CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
   // Default fallback: permissive 8-cycle pattern
   if (!Res)
     return CoExecInfo::build(0, 9, "AAAAAAAAA");
-  // PK_F32 may issue wherever other VALU can.
+  // PK_F32 and DOT may issue wherever other VALU can.
   for (unsigned I = 0; I < Res->TotalWindow; ++I)
     if (any(Res->Slots[I].Mask & CoExecMask::VALU))
-      Res->Slots[I].Mask |= CoExecMask::PK_F32;
+      Res->Slots[I].Mask |= CoExecMask::PK_F32 | CoExecMask::DOT;
   return *Res;
 }
 
@@ -408,8 +408,8 @@ CoExecInfo llvm::AMDGPU::getMFMACoIssueInfo(const MachineInstr &MI,
       TII.getOpSize(Opc, AMDGPU::getNamedOperandIdx(Opc, OpName::src1));
   bool IsXDL = TII.isXDL(MI);
   // An XDL holds VALU until 1 + (widest A/B source in bytes) / 16, and PK_F32
-  // until NumPasses + 2, one cycle more for XDL2x (an A source of 16 bytes or
-  // more). SGEMM and DGEMM hold every VALU until NumPasses + 2.
+  // and DOT until NumPasses + 2, one cycle more for XDL2x (an A source of 16
+  // bytes or more). SGEMM and DGEMM hold every VALU until NumPasses + 2.
   unsigned VALUStage =
       IsXDL ? 1 + std::max(SrcASize, SrcBSize) / 16 : NumPasses + 2;
   unsigned PackedStage = NumPasses + 2 + (IsXDL && SrcASize >= 16);
@@ -429,11 +429,12 @@ CoExecInfo llvm::AMDGPU::getMFMACoIssueInfo(const MachineInstr &MI,
     allowCoExec(*Res, CoExecMask::WMMA, NumPasses);
   }
 
-  // Extend the window to the PK_F32 hold; nothing else waits there.
+  // Extend the window to the PK_F32 and DOT hold; nothing else waits there.
   for (unsigned I = Res->TotalWindow; I < PackedStage; ++I)
-    Res->Slots[I].Mask = CoExecMask::All & ~CoExecMask::PK_F32;
+    Res->Slots[I].Mask =
+        CoExecMask::All & ~(CoExecMask::PK_F32 | CoExecMask::DOT);
   Res->TotalWindow = std::max(Res->TotalWindow, PackedStage);
-  allowCoExec(*Res, CoExecMask::PK_F32, PackedStage);
+  allowCoExec(*Res, CoExecMask::PK_F32 | CoExecMask::DOT, PackedStage);
   return *Res;
 }
 
@@ -442,6 +443,8 @@ CoExecMaskT llvm::AMDGPU::getCoExecMask(const MachineInstr &MI,
   CoExecMaskT Mask = getCoExecMask(classifyFlavor(MI, SII));
   if (Mask != CoExecMask::VALU)
     return Mask;
+  if (SII.isDOT(MI))
+    return CoExecMask::DOT;
   switch (MI.getOpcode()) {
   case AMDGPU::V_PK_ADD_F32:
   case AMDGPU::V_PK_FMA_F32:
