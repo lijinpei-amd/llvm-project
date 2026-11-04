@@ -73,12 +73,11 @@ static void allowCoExec(llvm::AMDGPU::CoExecInfo &Info,
     Info.Slots[Index].Mask |= ExtraBits;
 }
 
-/// Get co-execution info for a gfx950 MFMA instruction.
+/// Get co-execution info for a gfx950 MFMA instruction from the GFX9 Shader
+/// Programming Guide, or std::nullopt if the guide does not list it.
 /// The occupancy (cycles until the next MFMA may issue) is expressed as the
 /// first stage carrying the WMMA bit.
-llvm::AMDGPU::CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
-  using namespace llvm;
-  using namespace llvm::AMDGPU;
+static std::optional<CoExecInfo> getGFX950MFMACoExecInfo(unsigned Opcode) {
   CoExecInfo Res;
   for (unsigned I = 0; I < MaxCoExecStages; ++I)
     Res.Slots[I].Mask = CoExecMask::None;
@@ -380,8 +379,77 @@ llvm::AMDGPU::CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
     return Res;
 
   default:
-    // Default fallback: permissive 8-cycle pattern
+    return std::nullopt;
+  }
+}
+
+CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
+  std::optional<CoExecInfo> Res = getGFX950MFMACoExecInfo(Opcode);
+  // Default fallback: permissive 8-cycle pattern
+  if (!Res)
     return CoExecInfo::build(0, 9, "AAAAAAAAA");
+  // PK_F32 may issue wherever other VALU can.
+  for (unsigned I = 0; I < Res->TotalWindow; ++I)
+    if (any(Res->Slots[I].Mask & CoExecMask::VALU))
+      Res->Slots[I].Mask |= CoExecMask::PK_F32;
+  return *Res;
+}
+
+CoExecInfo llvm::AMDGPU::getMFMACoIssueInfo(const MachineInstr &MI,
+                                            const SIInstrInfo &TII) {
+  const GCNSubtarget &ST = TII.getSubtarget();
+  assert(ST.hasGFX940Insts() && SIInstrInfo::isMFMA(MI) &&
+         "expected a gfx942 or gfx950 MFMA");
+  unsigned Opc = MI.getOpcode();
+  unsigned NumPasses = TII.getRepeatRate(MI);
+  unsigned SrcASize =
+      TII.getOpSize(Opc, AMDGPU::getNamedOperandIdx(Opc, OpName::src0));
+  unsigned SrcBSize =
+      TII.getOpSize(Opc, AMDGPU::getNamedOperandIdx(Opc, OpName::src1));
+  bool IsXDL = TII.isXDL(MI);
+  // An XDL holds VALU until 1 + (widest A/B source in bytes) / 16, and PK_F32
+  // until NumPasses + 2, one cycle more for XDL2x (an A source of 16 bytes or
+  // more). SGEMM and DGEMM hold every VALU until NumPasses + 2.
+  unsigned VALUStage =
+      IsXDL ? 1 + std::max(SrcASize, SrcBSize) / 16 : NumPasses + 2;
+  unsigned PackedStage = NumPasses + 2 + (IsXDL && SrcASize >= 16);
+
+  std::optional<CoExecInfo> Res;
+  if (ST.hasGFX950Insts())
+    Res = getGFX950MFMACoExecInfo(Opc);
+  // Other classes are not known to wait past the MFMA's issue.
+  if (!Res) {
+    Res.emplace();
+    Res->Pattern = "undefinedundefinedundefinedundefined";
+    Res->TotalWindow = PackedStage;
+    for (unsigned I = 0; I < PackedStage; ++I)
+      Res->Slots[I].Mask = CoExecMask::None;
+    allowCoExec(*Res, CoExecMask::CTRL | CoExecMask::SALU | CoExecMask::MEM, 1);
+    allowCoExec(*Res, CoExecMask::VALU | CoExecMask::TRANS, VALUStage);
+    allowCoExec(*Res, CoExecMask::WMMA, NumPasses);
+  }
+
+  // Extend the window to the PK_F32 hold; nothing else waits there.
+  for (unsigned I = Res->TotalWindow; I < PackedStage; ++I)
+    Res->Slots[I].Mask = CoExecMask::All & ~CoExecMask::PK_F32;
+  Res->TotalWindow = std::max(Res->TotalWindow, PackedStage);
+  allowCoExec(*Res, CoExecMask::PK_F32, PackedStage);
+  return *Res;
+}
+
+CoExecMaskT llvm::AMDGPU::getCoExecMask(const MachineInstr &MI,
+                                        const SIInstrInfo &SII) {
+  CoExecMaskT Mask = getCoExecMask(classifyFlavor(MI, SII));
+  if (Mask != CoExecMask::VALU)
+    return Mask;
+  switch (MI.getOpcode()) {
+  case AMDGPU::V_PK_ADD_F32:
+  case AMDGPU::V_PK_FMA_F32:
+  case AMDGPU::V_PK_MOV_B32:
+  case AMDGPU::V_PK_MUL_F32:
+    return CoExecMask::PK_F32;
+  default:
+    return Mask;
   }
 }
 

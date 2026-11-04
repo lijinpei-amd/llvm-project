@@ -302,7 +302,7 @@ void GCNHazardRecognizer::updateMultiCycleVALUState(const MachineInstr &MI) {
 AMDGPU::CoExecMaskT
 GCNHazardRecognizer::getCoExecMaskForMI(const MachineInstr &MI,
                                         const SIInstrInfo &TII) {
-  return AMDGPU::getCoExecMask(AMDGPU::classifyFlavor(MI, TII));
+  return AMDGPU::getCoExecMask(MI, TII);
 }
 
 unsigned GCNHazardRecognizer::checkTRANSHazard(const MachineInstr &MI) const {

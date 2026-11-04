@@ -52,12 +52,14 @@ enum class CoExecMask : uint16_t {
   VMEM = 1 << 5,  // Global memory
   SMEM = 1 << 6,  // Scalar memory
   WMMA = 1 << 7,  // Next WMMA (V stages only), or MFMA
+  // V_PK_{ADD,FMA,MUL}_F32 and V_PK_MOV_B32
+  PK_F32 = 1 << 8,
   All = 0xFFFF,
 
   MEM = DS | VMEM | SMEM,
-  StageE0 = CTRL,                            // Issue: control only
-  StageE = CTRL | SALU | MEM,                // External: mem/salu
-  StageI = CTRL | SALU | MEM | VALU | TRANS, // Internal: all ALU
+  StageE0 = CTRL,                                     // Issue: control only
+  StageE = CTRL | SALU | MEM,                         // External: mem/salu
+  StageI = CTRL | SALU | MEM | VALU | PK_F32 | TRANS, // Internal: all ALU
   // Internal + scaled-WMMA absorb: same as StageI but the next scaled
   // WMMA may issue here - its LD_SCALE consumes the I cycle and the matrix
   // multiply lands in the V slot that follows. Used for the last I before
@@ -157,6 +159,10 @@ inline CoExecMaskT getCoExecMask(InstructionFlavor F) {
   llvm_unreachable("Unknown InstructionFlavor");
 }
 
+/// Get the co-execution class of \p MI, which unlike the flavor's separates
+/// PK_F32 from other VALU.
+CoExecMaskT getCoExecMask(const MachineInstr &MI, const SIInstrInfo &SII);
+
 //===----------------------------------------------------------------------===//
 // Co-execution Stage Type
 //===----------------------------------------------------------------------===//
@@ -212,6 +218,8 @@ inline const char *getCoExecMaskName(CoExecMaskT Mask) {
     return "SMEM";
   case CoExecMask::WMMA:
     return "WMMA";
+  case CoExecMask::PK_F32:
+    return "PK_F32";
   default:
     llvm_unreachable("Not a single instruction class");
   }
@@ -272,6 +280,11 @@ struct CoExecInfo {
         return I;
     }
     return std::nullopt;
+  }
+
+  /// Get the first stage at which the instruction class can co-execute.
+  unsigned getFirstAllowedStage(CoExecMaskT InstMask) const {
+    return findNextAllowedStage(InstMask, 0).value_or(TotalWindow);
   }
 
   /// Return the number of cycles an instruction matching \p InstMask must wait
@@ -370,6 +383,15 @@ inline CoExecInfo CoExecInfo::build(unsigned UnitOccupancy,
 
 /// Get co-execution info for a gfx950 MFMA instruction.
 CoExecInfo getMFMACoExecInfo(unsigned Opcode);
+
+/// Get the measured co-issue windows of a gfx942 or gfx950 MFMA instruction,
+/// which unlike getMFMACoExecInfo() hold PK_F32 longer than other VALU.
+/// Stages count 4-clock cycles from the MFMA's issue. gfx942 timings are for
+/// MI300X, or MI308X with the peak TOPS limiter enabled; with the limiter
+/// disabled, MI308X holds VALU until an XDL's passes end. A scaled MFMA is
+/// assumed to issue behind another MFMA; issued into an idle MFMA pipe, it
+/// takes one more cycle.
+CoExecInfo getMFMACoIssueInfo(const MachineInstr &MI, const SIInstrInfo &TII);
 
 /// Get co-execution info for a WMMA instruction, selecting the per-cycle slot
 /// pattern from the opcode (and operand formats for the F8F6F4 variants).
