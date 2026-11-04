@@ -1,4 +1,4 @@
-//===- llvm/unittest/CodeGen/AMDGPUMetadataTest.cpp -----------------------===//
+//===- llvm/unittests/Target/AMDGPU/MFMACoExecRules.cpp -------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 /// \file
-/// Test that MFMA co-exec rules are defined for all gfx950 MFMA instructions.
+/// Test MFMA co-exec rules.
 //
 //===----------------------------------------------------------------------===//
 
@@ -21,6 +21,7 @@
 #include "GCNSubtarget.h"
 #include "SIInstrInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 
 #define GET_AVAILABLE_OPCODE_CHECKER
 #include "AMDGPUGenInstrInfo.inc"
@@ -55,4 +56,128 @@ TEST_F(AMDGPUMFMACoExecRules, GFX950) {
     // definition of co-exec rules.
     EXPECT_EQ(Info.Slots[0].Mask, CoExecMask::None) << MCII->getName(Op);
   }
+}
+
+namespace {
+class MFMACoExecTest {
+public:
+  explicit MFMACoExecTest(std::unique_ptr<GCNTargetMachine> TheTM)
+      : TM(std::move(TheTM)),
+        ST(TM->getTargetTriple(), std::string(TM->getTargetCPU()),
+           std::string(TM->getTargetFeatureString()), *TM),
+        Mod("Module", Ctx), MMI(TM.get()) {
+    Mod.setDataLayout(TM->getTargetTriple().computeDataLayout());
+    auto *F = Function::Create(FunctionType::get(Type::getVoidTy(Ctx), false),
+                               GlobalValue::ExternalLinkage, "Test", &Mod);
+    MF = std::make_unique<MachineFunction>(*F, *TM, ST, MMI.getContext(), 0);
+  }
+
+  const SIInstrInfo &getInstrInfo() const { return *ST.getInstrInfo(); }
+
+  // Builds an instruction with placeholder operands.
+  MachineInstr &buildMI(unsigned Opc) {
+    const MCInstrDesc &Desc = getInstrInfo().get(Opc);
+    MachineInstr *MI = MF->CreateMachineInstr(Desc, DebugLoc());
+    for (auto [Idx, Info] : enumerate(Desc.operands())) {
+      if (Info.RegClass == -1)
+        MI->addOperand(*MF, MachineOperand::CreateImm(0));
+      else
+        MI->addOperand(*MF, MachineOperand::CreateReg(Register(), Idx < 1));
+    }
+    return *MI;
+  }
+
+  // First stage at which an instruction with opcode Opc can issue after an
+  // MFMA with opcode MFMAOpc.
+  unsigned getIssueStage(unsigned MFMAOpc, unsigned Opc) {
+    return getMFMACoExecInfo(MFMAOpc).getFirstAllowedStage(
+        getCoExecMaskForMI(buildMI(Opc), getInstrInfo()));
+  }
+
+private:
+  std::unique_ptr<GCNTargetMachine> TM;
+  GCNSubtarget ST;
+  LLVMContext Ctx;
+  Module Mod;
+  MachineModuleInfo MMI;
+  std::unique_ptr<MachineFunction> MF;
+};
+} // namespace
+
+// Expected PK_F32 stages were measured on MI350X; one stage is 4 clocks.
+// Scaled MFMAs were measured issuing right behind another MFMA.
+TEST_F(AMDGPUMFMACoExecRules, GFX950IssueStages) {
+  auto TM =
+      createAMDGPUTargetMachine(Triple("amdgcn-amd-amdhsa"), "gfx950", "");
+  if (!TM)
+    GTEST_SKIP();
+  MFMACoExecTest Test(std::move(TM));
+  const SIInstrInfo &TII = Test.getInstrInfo();
+  for (unsigned PK : {V_PK_FMA_F32, V_PK_MUL_F32, V_PK_ADD_F32, V_PK_MOV_B32})
+    EXPECT_EQ(Test.getIssueStage(V_MFMA_F32_16X16X32_BF16_vgprcd_e64, PK), 7u)
+        << TII.getName(PK);
+
+  struct {
+    unsigned MFMAOpc;
+    unsigned VALU, PackedF32;
+  } Cases[] = {
+      {V_MFMA_F32_16X16X32_BF16_vgprcd_e64, 2, 7},
+      {V_MFMA_F32_16X16X32_BF16_e64, 2, 7},
+      {V_MFMA_F32_16X16X32_F16_vgprcd_e64, 2, 7},
+      {V_MFMA_I32_16X16X64_I8_vgprcd_e64, 2, 7},
+      {V_MFMA_F32_32X32X16_BF16_vgprcd_e64, 2, 11},
+      {V_MFMA_F32_32X32X16_F16_vgprcd_e64, 2, 11},
+      {V_MFMA_I32_32X32X32_I8_vgprcd_e64, 2, 11},
+      {V_MFMA_F32_16X16X128_F8F6F4_f4_f4_vgprcd_e64, 2, 7},
+      {V_MFMA_F32_16X16X128_F8F6F4_f6_f6_vgprcd_e64, 2, 7},
+      {V_MFMA_F32_16X16X128_F8F6F4_f8_f8_vgprcd_e64, 3, 11},
+      {V_MFMA_F32_16X16X128_F8F6F4_f8_f4_vgprcd_e64, 3, 11},
+      {V_MFMA_F32_32X32X64_F8F6F4_f4_f4_vgprcd_e64, 2, 11},
+      {V_MFMA_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64, 3, 19},
+      {V_MFMA_SCALE_F32_16X16X128_F8F6F4_f8_f8_vgprcd_e64, 3, 11},
+      {V_MFMA_SCALE_F32_16X16X128_F8F6F4_f4_f4_vgprcd_e64, 2, 7},
+      // The table holds VALU until 2 (16x16) or 4 (32x32); MI350X issues it
+      // at 3.
+      {V_SMFMAC_F32_16X16X64_BF16_e64, 2, 7},
+      {V_SMFMAC_F32_32X32X32_BF16_e64, 4, 11},
+      {V_SMFMAC_F32_16X16X128_FP8_FP8_e64, 2, 7},
+      {V_SMFMAC_F32_32X32X64_FP8_FP8_e64, 4, 11},
+      {V_MFMA_F64_16X16X4F64_vgprcd_e64, 18, 18},
+  };
+  for (const auto &C : Cases) {
+    StringRef Name = TII.getName(C.MFMAOpc);
+    EXPECT_EQ(Test.getIssueStage(C.MFMAOpc, V_FMA_F32_e64), C.VALU) << Name;
+    EXPECT_EQ(Test.getIssueStage(C.MFMAOpc, V_PK_ADD_F16), C.VALU) << Name;
+    EXPECT_EQ(Test.getIssueStage(C.MFMAOpc, V_PK_FMA_F32), C.PackedF32) << Name;
+  }
+}
+
+// PK_F32 extends the 32x32 entries' window from 8 to 12 cycles; nothing else
+// waits past 8.
+TEST_F(AMDGPUMFMACoExecRules, GFX950PackedF32ExtendsWindow) {
+  CoExecInfo Info = getMFMACoExecInfo(V_MFMA_F32_32X32X16_BF16_vgprcd_e64);
+  EXPECT_EQ(Info.TotalWindow, 12u);
+  for (CoExecMask Mask :
+       {CoExecMask::CTRL, CoExecMask::VALU, CoExecMask::TRANS, CoExecMask::SALU,
+        CoExecMask::DS, CoExecMask::VMEM, CoExecMask::SMEM, CoExecMask::WMMA})
+    EXPECT_TRUE(Info.canCoExec(Mask, 8)) << getCoExecMaskName(Mask);
+  EXPECT_FALSE(Info.canCoExec(CoExecMask::PK_F32, 10));
+  EXPECT_TRUE(Info.canCoExec(CoExecMask::PK_F32, 11));
+}
+
+TEST_F(AMDGPUMFMACoExecRules, CoExecMaskClasses) {
+  auto TM =
+      createAMDGPUTargetMachine(Triple("amdgcn-amd-amdhsa"), "gfx950", "");
+  if (!TM)
+    GTEST_SKIP();
+  MFMACoExecTest Test(std::move(TM));
+  const SIInstrInfo &TII = Test.getInstrInfo();
+  auto Check = [&](ArrayRef<unsigned> Opcs, CoExecMaskT Expected) {
+    for (unsigned Opc : Opcs)
+      EXPECT_EQ(getCoExecMaskForMI(Test.buildMI(Opc), TII), Expected)
+          << TII.getName(Opc);
+  };
+  Check({V_PK_ADD_F32, V_PK_FMA_F32, V_PK_MOV_B32, V_PK_MUL_F32},
+        CoExecMask::PK_F32);
+  Check({V_FMA_F32_e64, V_PK_ADD_F16}, CoExecMask::VALU);
 }
