@@ -49,7 +49,7 @@ TEST_F(AMDGPUMFMACoExecRules, GFX950) {
     if (!Required.test(AMDGPU_MC::Feature_HasGFX950InstsBit))
       continue;
 
-    CoExecInfo Info = getMFMACoExecInfo(Op);
+    CoExecInfo Info = getMFMACoExecInfo(Op, *ST);
     // None of gfx950 MFMAs can co-execute anything in their issue slot and our
     // fallback for unrecognized MFMA instructions is to allow everything in
     // every slot, so here we check that we did not encounter the fallback
@@ -72,6 +72,7 @@ public:
     MF = std::make_unique<MachineFunction>(*F, *TM, ST, MMI.getContext(), 0);
   }
 
+  const GCNSubtarget &getSubtarget() const { return ST; }
   const SIInstrInfo &getInstrInfo() const { return *ST.getInstrInfo(); }
 
   // Builds an instruction with placeholder operands.
@@ -90,8 +91,8 @@ public:
   // First stage at which an instruction with opcode Opc can issue after an
   // MFMA with opcode MFMAOpc.
   unsigned getIssueStage(unsigned MFMAOpc, unsigned Opc) {
-    return getMFMACoExecInfo(MFMAOpc).getFirstAllowedStage(
-        getCoExecMaskForMI(buildMI(Opc), getInstrInfo()));
+    return getMFMACoExecInfo(MFMAOpc, ST)
+        .getFirstAllowedStage(getCoExecMaskForMI(buildMI(Opc), getInstrInfo()));
   }
 
 private:
@@ -152,10 +153,86 @@ TEST_F(AMDGPUMFMACoExecRules, GFX950IssueStages) {
   }
 }
 
+// Every MFMA gfx942 runs has an entry rather than the fallback, which allows
+// everything in every slot.
+TEST_F(AMDGPUMFMACoExecRules, GFX942) {
+  auto TM =
+      createAMDGPUTargetMachine(Triple("amdgcn-amd-amdhsa"), "gfx942", "");
+  if (!TM)
+    GTEST_SKIP();
+  MFMACoExecTest Test(std::move(TM));
+  const SIInstrInfo &TII = Test.getInstrInfo();
+  unsigned NumMFMAs = 0;
+  for (unsigned Op = 0; Op < TII.getNumOpcodes(); ++Op) {
+    if (!TII.isMFMA(Op) || !TII.get(Op).isPseudo())
+      continue;
+    int MCOp = TII.pseudoToMCOpcode(Op);
+    if (MCOp == -1)
+      continue;
+    FeatureBitset Required = AMDGPU_MC::computeRequiredFeatures(MCOp);
+    if (!Required.test(AMDGPU_MC::Feature_isGFX940PlusBit) ||
+        Required.test(AMDGPU_MC::Feature_HasGFX950InstsBit))
+      continue;
+    ++NumMFMAs;
+    EXPECT_NE(getMFMACoExecInfo(Op, Test.getSubtarget()).Slots[0].Mask,
+              CoExecMask::All)
+        << TII.getName(Op);
+  }
+  EXPECT_GT(NumMFMAs, 0u);
+}
+
+// Expected stages were measured on MI300X; MI350X times these MFMAs the same,
+// except for DGEMM 16x16x4, which takes twice as many passes there.
+TEST_F(AMDGPUMFMACoExecRules, GFX942IssueStages) {
+  auto TM =
+      createAMDGPUTargetMachine(Triple("amdgcn-amd-amdhsa"), "gfx942", "");
+  if (!TM)
+    GTEST_SKIP();
+  MFMACoExecTest Test(std::move(TM));
+  const SIInstrInfo &TII = Test.getInstrInfo();
+  for (unsigned PK : {V_PK_FMA_F32, V_PK_MUL_F32, V_PK_ADD_F32, V_PK_MOV_B32})
+    EXPECT_EQ(Test.getIssueStage(V_MFMA_F32_16X16X16BF16_1K_vgprcd_e64, PK), 6u)
+        << TII.getName(PK);
+
+  struct {
+    unsigned MFMAOpc;
+    unsigned VALU, PackedF32, MFMA;
+  } Cases[] = {
+      {V_MFMA_F32_16X16X16BF16_1K_vgprcd_e64, 1, 6, 4},
+      {V_MFMA_F32_16X16X16BF16_1K_e64, 1, 6, 4},
+      {V_MFMA_F32_4X4X4BF16_1K_vgprcd_e64, 1, 4, 2},
+      {V_MFMA_F32_32X32X8BF16_1K_vgprcd_e64, 1, 10, 8},
+      {V_MFMA_F32_16X16X16F16_vgprcd_e64, 1, 6, 4},
+      {V_MFMA_I32_16X16X32I8_vgprcd_e64, 1, 6, 4},
+      {V_MFMA_F32_16X16X32_FP8_FP8_vgprcd_e64, 1, 6, 4},
+      {V_MFMA_F32_16X16X8XF32_vgprcd_e64, 1, 6, 4},
+      {V_SMFMAC_F32_16X16X32_F16_e64, 2, 6, 4},
+      // Measured on MI350X only.
+      {V_SMFMAC_F32_32X32X16_F16_e64, 2, 10, 8},
+      {V_MFMA_F32_16X16X4F32_vgprcd_e64, 10, 10, 8},
+      {V_MFMA_F64_16X16X4F64_vgprcd_e64, 10, 10, 8},
+      {V_MFMA_F64_4X4X4F64_vgprcd_e64, 6, 6, 4},
+  };
+  for (const auto &C : Cases) {
+    StringRef Name = TII.getName(C.MFMAOpc);
+    EXPECT_EQ(Test.getIssueStage(C.MFMAOpc, V_FMA_F32_e64), C.VALU) << Name;
+    EXPECT_EQ(Test.getIssueStage(C.MFMAOpc, V_EXP_F32_e32), C.VALU) << Name;
+    EXPECT_EQ(Test.getIssueStage(C.MFMAOpc, V_PK_ADD_F16), C.VALU) << Name;
+    EXPECT_EQ(Test.getIssueStage(C.MFMAOpc, V_PK_FMA_F32), C.PackedF32) << Name;
+    EXPECT_EQ(Test.getIssueStage(C.MFMAOpc, C.MFMAOpc), C.MFMA) << Name;
+  }
+}
+
 // PK_F32 extends the 32x32 entries' window from 8 to 12 cycles; nothing else
 // waits past 8.
 TEST_F(AMDGPUMFMACoExecRules, GFX950PackedF32ExtendsWindow) {
-  CoExecInfo Info = getMFMACoExecInfo(V_MFMA_F32_32X32X16_BF16_vgprcd_e64);
+  auto TM =
+      createAMDGPUTargetMachine(Triple("amdgcn-amd-amdhsa"), "gfx950", "");
+  if (!TM)
+    GTEST_SKIP();
+  MFMACoExecTest Test(std::move(TM));
+  CoExecInfo Info = getMFMACoExecInfo(V_MFMA_F32_32X32X16_BF16_vgprcd_e64,
+                                      Test.getSubtarget());
   EXPECT_EQ(Info.TotalWindow, 12u);
   for (CoExecMask Mask :
        {CoExecMask::CTRL, CoExecMask::VALU, CoExecMask::TRANS, CoExecMask::SALU,

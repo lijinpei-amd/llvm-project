@@ -930,7 +930,7 @@ bool SIPreEmitPeephole::run(MachineFunction &MF, MachineLoopInfo *LoopInfo) {
       // Where the co-execution table holds PK_F32 past other VALU, unpacking
       // pays off from the first VALU issue up to the PK_F32 one.
       if (AMDGPU::hasCoExecInfo(ST)) {
-        AMDGPU::CoExecInfo Info = AMDGPU::getMFMACoExecInfo(MI.getOpcode());
+        AMDGPU::CoExecInfo Info = AMDGPU::getMFMACoExecInfo(MI.getOpcode(), ST);
         unsigned PackedStage =
             Info.getFirstAllowedStage(AMDGPU::CoExecMask::PK_F32);
         unsigned VALUStage =
