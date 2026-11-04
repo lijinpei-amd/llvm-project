@@ -137,9 +137,14 @@ llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode, const GCNSubtarget &ST) {
   case V_MFMA_SCALE_F32_16X16X128_F8F6F4_f6_f6_vgprcd_e64:
   case V_MFMA_SCALE_F32_16X16X128_F8F6F4_f6_f6_gfx940_acd:
   case V_MFMA_SCALE_F32_16X16X128_F8F6F4_f6_f6_gfx940_vcd:
-    // GFX9 Shader Programming Guide lists those SMFMAC separately, but for
-    // intended purposes here all those instructions are the same. This comment
-    // is to simplify reverse mapping to the SPG.
+    Res.TotalWindow = 8;
+    allowCoExec(Res, CoExecMask::SALU, 1);
+    allowCoExec(Res, CoExecMask::DS | CoExecMask::VALU | CoExecMask::VMEM, 2);
+    allowCoExec(Res, CoExecMask::WMMA, 4);
+    allowCoExec(Res, CoExecMask::PK_F32, 7);
+    return Res;
+
+  // SMFMAC, 4-cycle occupancy, 8-cycle window.
   case V_SMFMAC_F32_16X16X64_BF16_e64:
   case V_SMFMAC_F32_16X16X64_BF16_gfx940:
   case V_SMFMAC_I32_16X16X128_I8_e64:
@@ -156,7 +161,8 @@ llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode, const GCNSubtarget &ST) {
   case V_SMFMAC_F32_16X16X64_F16_gfx940:
     Res.TotalWindow = 8;
     allowCoExec(Res, CoExecMask::SALU, 1);
-    allowCoExec(Res, CoExecMask::DS | CoExecMask::VALU | CoExecMask::VMEM, 2);
+    allowCoExec(Res, CoExecMask::DS | CoExecMask::VMEM, 2);
+    allowCoExec(Res, CoExecMask::VALU, 3);
     allowCoExec(Res, CoExecMask::WMMA, 4);
     allowCoExec(Res, CoExecMask::PK_F32, 7);
     return Res;
@@ -372,7 +378,7 @@ llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode, const GCNSubtarget &ST) {
   case V_SMFMAC_F32_32X32X32_F16_gfx940:
     Res.TotalWindow = 12;
     allowCoExec(Res, CoExecMask::SALU, 1);
-    allowCoExec(Res, CoExecMask::DS | CoExecMask::VALU | CoExecMask::VMEM, 4);
+    allowCoExec(Res, CoExecMask::DS | CoExecMask::VALU | CoExecMask::VMEM, 3);
     allowCoExec(Res, CoExecMask::WMMA, 9);
     allowCoExec(Res, CoExecMask::PK_F32, 11);
     return Res;
@@ -392,15 +398,16 @@ llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode, const GCNSubtarget &ST) {
       return Res;
     }
     Res.TotalWindow = 19;
-    allowCoExec(Res, CoExecMask::DS | CoExecMask::SALU | CoExecMask::VMEM, 0);
+    allowCoExec(Res, CoExecMask::DS | CoExecMask::SALU | CoExecMask::VMEM, 1);
     allowCoExec(Res, CoExecMask::WMMA | CoExecMask::VALU | CoExecMask::PK_F32,
                 18);
     return Res;
 
   // The MFMAs below run on both gfx942 and gfx950. The next MFMA can issue
-  // once the passes end, and the window ends two cycles later. Other VALU can
-  // issue from cycle 1 after an XDL and from cycle 2 after an SMFMAC. PK_F32,
-  // and every VALU after an SGEMM or DGEMM, waits for the window to end.
+  // once the passes end, and the window ends two cycles later. Other VALU, DS
+  // and VMEM can issue from cycle 1 after an XDL and from cycle 2 after an
+  // SMFMAC. PK_F32, and every VALU after an SGEMM or DGEMM, waits for the
+  // window to end.
 
   // XDL, 2-cycle occupancy, 4-cycle window.
   case V_MFMA_F32_4X4X4BF16_1K_e64:
@@ -517,8 +524,11 @@ llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode, const GCNSubtarget &ST) {
   case V_SMFMAC_F32_16X16X64_FP8_FP8_e64:
   case V_SMFMAC_I32_16X16X64_I8_e64:
     Res.TotalWindow = 6;
-    allowCoExec(Res, CoExecMask::CTRL | CoExecMask::SALU | CoExecMask::MEM, 1);
-    allowCoExec(Res, CoExecMask::VALU | CoExecMask::TRANS, 2);
+    allowCoExec(Res, CoExecMask::CTRL | CoExecMask::SALU | CoExecMask::SMEM, 1);
+    allowCoExec(Res,
+                CoExecMask::DS | CoExecMask::VMEM | CoExecMask::VALU |
+                    CoExecMask::TRANS,
+                2);
     allowCoExec(Res, CoExecMask::WMMA, 4);
     return Res;
 
@@ -531,8 +541,11 @@ llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode, const GCNSubtarget &ST) {
   case V_SMFMAC_F32_32X32X32_FP8_FP8_e64:
   case V_SMFMAC_I32_32X32X32_I8_e64:
     Res.TotalWindow = 10;
-    allowCoExec(Res, CoExecMask::CTRL | CoExecMask::SALU | CoExecMask::MEM, 1);
-    allowCoExec(Res, CoExecMask::VALU | CoExecMask::TRANS, 2);
+    allowCoExec(Res, CoExecMask::CTRL | CoExecMask::SALU | CoExecMask::SMEM, 1);
+    allowCoExec(Res,
+                CoExecMask::DS | CoExecMask::VMEM | CoExecMask::VALU |
+                    CoExecMask::TRANS,
+                2);
     allowCoExec(Res, CoExecMask::WMMA, 8);
     return Res;
 

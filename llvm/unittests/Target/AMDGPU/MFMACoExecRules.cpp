@@ -15,6 +15,10 @@
 #include "gtest/gtest.h"
 
 #include "AMDGPUCoExecInfo.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/TargetParser/SubtargetFeature.h"
 
@@ -137,12 +141,10 @@ TEST_F(AMDGPUMFMACoExecRules, GFX950IssueStages) {
       {V_MFMA_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64, 3, 19},
       {V_MFMA_SCALE_F32_16X16X128_F8F6F4_f8_f8_vgprcd_e64, 3, 11},
       {V_MFMA_SCALE_F32_16X16X128_F8F6F4_f4_f4_vgprcd_e64, 2, 7},
-      // The table holds VALU until 2 (16x16) or 4 (32x32); MI350X issues it
-      // at 3.
-      {V_SMFMAC_F32_16X16X64_BF16_e64, 2, 7},
-      {V_SMFMAC_F32_32X32X32_BF16_e64, 4, 11},
-      {V_SMFMAC_F32_16X16X128_FP8_FP8_e64, 2, 7},
-      {V_SMFMAC_F32_32X32X64_FP8_FP8_e64, 4, 11},
+      {V_SMFMAC_F32_16X16X64_BF16_e64, 3, 7},
+      {V_SMFMAC_F32_32X32X32_BF16_e64, 3, 11},
+      {V_SMFMAC_F32_16X16X128_FP8_FP8_e64, 3, 7},
+      {V_SMFMAC_F32_32X32X64_FP8_FP8_e64, 3, 11},
       {V_MFMA_F64_16X16X4F64_vgprcd_e64, 18, 18},
   };
   for (const auto &C : Cases) {
@@ -257,4 +259,446 @@ TEST_F(AMDGPUMFMACoExecRules, CoExecMaskClasses) {
   Check({V_PK_ADD_F32, V_PK_FMA_F32, V_PK_MOV_B32, V_PK_MUL_F32},
         CoExecMask::PK_F32);
   Check({V_FMA_F32_e64, V_PK_ADD_F16}, CoExecMask::VALU);
+}
+
+namespace {
+// The co-execution rules a group of MFMAs share.
+struct CoExecTableGroup {
+  // Opcode names without the _e64, _vgprcd_e64 or _mac*_e64 suffix.
+  std::vector<StringRef> MFMAs;
+  // One row per line: a cycle, then the instruction kinds the same wave may
+  // issue from that cycle until the next row's.
+  StringRef Rows;
+};
+} // namespace
+
+// Returns the classes \p Table allows in each cycle up to its last row. LDS is
+// DS, TEX is VMEM and ALU0 or ALU0/1 is VALU; other kinds are not checked.
+static SmallVector<CoExecMaskT> parseRows(StringRef Table) {
+  SmallVector<CoExecMaskT> Cycles;
+  SmallVector<StringRef> Rows;
+  Table.split(Rows, '\n', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  for (StringRef Row : Rows) {
+    StringRef Cell = Row.ltrim();
+    unsigned Cycle;
+    if (Cell.consumeInteger(10, Cycle) || Cycle < Cycles.size()) {
+      ADD_FAILURE() << "bad row: " << Row;
+      continue;
+    }
+    SmallVector<StringRef> Kinds;
+    SplitString(Cell, Kinds, ", ");
+    CoExecMaskT Mask = CoExecMask::None;
+    for (StringRef Kind : Kinds)
+      Mask |= StringSwitch<CoExecMaskT>(Kind)
+                  .Case("LDS", CoExecMask::DS)
+                  .Case("TEX", CoExecMask::VMEM)
+                  .Cases({"ALU0", "ALU0/1"}, CoExecMask::VALU)
+                  .Case("PK_F32", CoExecMask::PK_F32)
+                  .Default(CoExecMask::None);
+    CoExecMaskT Previous = Cycles.empty() ? CoExecMask::None : Cycles.back();
+    Cycles.resize(Cycle, Previous);
+    Cycles.push_back(Mask);
+  }
+  return Cycles;
+}
+
+// Checks the DS, VMEM, VALU and PK_F32 bits of every cycle up to the last row
+// of each group, and returns the names of the checked opcodes.
+static StringSet<> checkTableGroups(MFMACoExecTest &Test,
+                                    ArrayRef<CoExecTableGroup> Groups) {
+  const SIInstrInfo &TII = Test.getInstrInfo();
+  StringMap<unsigned> Opcodes;
+  for (unsigned Op = 0; Op < TII.getNumOpcodes(); ++Op)
+    if (TII.isMFMA(Op))
+      Opcodes[TII.getName(Op)] = Op;
+
+  StringSet<> Checked;
+  for (const CoExecTableGroup &G : Groups) {
+    SmallVector<CoExecMaskT> Cycles = parseRows(G.Rows);
+    for (StringRef Base : G.MFMAs) {
+      unsigned NumForms = 0;
+      for (StringRef Suffix :
+           {"_e64", "_vgprcd_e64", "_mac_e64", "_mac_vgprcd_e64"}) {
+        auto It = Opcodes.find((Base + Suffix).str());
+        if (It == Opcodes.end())
+          continue;
+        ++NumForms;
+        Checked.insert(It->getKey());
+        CoExecInfo Info = getMFMACoExecInfo(It->second, Test.getSubtarget());
+        for (CoExecMask Class : {CoExecMask::DS, CoExecMask::VMEM,
+                                 CoExecMask::VALU, CoExecMask::PK_F32}) {
+          // One character per cycle: 'x' if the class may issue, '.' if not.
+          std::string Expected, Actual;
+          for (auto [Cycle, Mask] : enumerate(Cycles)) {
+            Expected += any(Mask & Class) ? 'x' : '.';
+            Actual += Info.canCoExec(Class, Cycle) ? 'x' : '.';
+          }
+          EXPECT_EQ(Actual, Expected)
+              << It->getKey() << ' ' << getCoExecMaskName(Class);
+        }
+      }
+      EXPECT_GT(NumForms, 0u) << Base;
+    }
+  }
+  return Checked;
+}
+
+// MFMAs that gfx942 and gfx950 both run.
+static const CoExecTableGroup SharedGroups[] = {
+    // MFMA_F32_4X4X4F16, MFMA_ F32_4X4X4BF16, MFMA_ I32_4X4X4I8
+    {{"V_MFMA_F32_4X4X4F16", "V_MFMA_F32_4X4X4BF16_1K", "V_MFMA_I32_4X4X4I8"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS, ALU0
+ 2  EXP, TEX, LDS, ALU0, XDL, LD_SCALE
+ 3  EXP, TEX, LDS, ALU0, XDL, XDL2x, LD_SCALE
+ 4  EXP, TEX, LDS, ALU0/1, XDL, XDL2x, LD_SCALE, S/DGEMM, DLops, PK_F32
+)"},
+    // MFMA_F32_16X16X4F16, MFMA_F32_16X16X4BF16, MFMA_I32_16X16X4I8
+    {{"V_MFMA_F32_16X16X4F16", "V_MFMA_F32_16X16X4BF16_1K",
+      "V_MFMA_I32_16X16X4I8"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS, ALU0
+ 7  EXP, TEX, LDS, ALU0
+ 8  EXP, TEX, LDS, ALU0, XDL LD_SCALE
+ 9  EXP, TEX, LDS, ALU0, XDL XDL2x, LD_SCALE
+10  EXP, TEX, LDS, ALU0/1, XDL, XDL2x, LD_SCALE S/DGEMM, DLops, PK_F32
+)"},
+    // MFMA_F32_16X16X16F16, MFMA_F32_16X16X16BF16, MFMA_I32_16X16X32I8,
+    // MFMA_F32_16X16X32_(BF8,F8),
+    {{"V_MFMA_F32_16X16X16F16", "V_MFMA_F32_16X16X16BF16_1K",
+      "V_MFMA_I32_16X16X32I8", "V_MFMA_F32_16X16X32_BF8_BF8",
+      "V_MFMA_F32_16X16X32_BF8_FP8", "V_MFMA_F32_16X16X32_FP8_BF8",
+      "V_MFMA_F32_16X16X32_FP8_FP8"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS, ALU0
+ 2  EXP, TEX, LDS, ALU0
+ 3  EXP, TEX, LDS, ALU0
+ 4  EXP, TEX, LDS, ALU0, XDL LD_SCALE
+ 5  EXP, TEX, LDS, ALU0, XDL XDL2x, LD_SCALE
+ 6  EXP, TEX, LDS, ALU0/1, XDL, XDL2x, LD_SCALE S/DGEMM, DLops, PK_F32
+)"},
+    // SMFMAC_F32_16X16X32F16, SMFMAC_F32_16X16X32BF16, SMFMAC_I32_16X16X64I8,
+    // SMFMAC_F32_16X16X64_(BF8/F8)
+    {{"V_SMFMAC_F32_16X16X32_F16", "V_SMFMAC_F32_16X16X32_BF16",
+      "V_SMFMAC_I32_16X16X64_I8", "V_SMFMAC_F32_16X16X64_BF8_BF8",
+      "V_SMFMAC_F32_16X16X64_BF8_FP8", "V_SMFMAC_F32_16X16X64_FP8_BF8",
+      "V_SMFMAC_F32_16X16X64_FP8_FP8"},
+     R"(
+ 0  none
+ 1  none
+ 2  EXP, TEX, LDS, ALU0
+ 3  EXP, TEX, LDS, ALU0
+ 4  EXP, TEX, LDS, ALU0, XDL, LD_SCALE
+ 5  EXP, TEX, LDS, ALU0, XDL XDL2x, LD_SCALE
+ 6  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, Dlops, PK_F32
+)"},
+    // MFMA_F32_32X32X4F16, MFMA_F32_32X32X4BF16, MFMA_I32_32X32X4I8
+    {{"V_MFMA_F32_32X32X4F16", "V_MFMA_F32_32X32X4BF16_1K",
+      "V_MFMA_I32_32X32X4I8"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS, ALU0
+15  EXP, TEX, LDS, ALU0
+16  EXP, TEX, LDS, ALU0, XDL, LD_SCALE
+17  EXP, TEX, LDS, ALU0, XDL XDL2x, LD_SCALE
+18  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, DLops, PK_F32
+)"},
+    // MFMA_F32_32X32X8F16, MFMA_F32_32X32X8BF16, MFMA_I32_32X32X16I8,
+    // MFMA_F32_32X32X16_(F8/BF8)
+    {{"V_MFMA_F32_32X32X8F16", "V_MFMA_F32_32X32X8BF16_1K",
+      "V_MFMA_I32_32X32X16I8", "V_MFMA_F32_32X32X16_BF8_BF8",
+      "V_MFMA_F32_32X32X16_BF8_FP8", "V_MFMA_F32_32X32X16_FP8_BF8",
+      "V_MFMA_F32_32X32X16_FP8_FP8"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS, ALU0
+ 7  EXP, TEX, LDS, ALU0,
+ 8  EXP, TEX, LDS, ALU0, XDL LD_SCALE
+ 9  EXP, TEX, LDS, ALU0, XDL XDL2x, LD_SCALE
+10  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, DLops, PK_F32, XDL2x, LD_SCALE
+)"},
+    // SMFMAC_I32_32X32X16F16, SMFMAC_I32_32X32X16BF16 ,SMFMAC_I32_32X32X32I8,
+    // SMFMAC_F32_32X32X32_(FP8/BF8)
+    {{"V_SMFMAC_F32_32X32X16_F16", "V_SMFMAC_F32_32X32X16_BF16",
+      "V_SMFMAC_I32_32X32X32_I8", "V_SMFMAC_F32_32X32X32_BF8_BF8",
+      "V_SMFMAC_F32_32X32X32_BF8_FP8", "V_SMFMAC_F32_32X32X32_FP8_BF8",
+      "V_SMFMAC_F32_32X32X32_FP8_FP8"},
+     R"(
+ 0  none
+ 1  none
+ 2  EXP, TEX, LDS, ALU0
+ 7  EXP, TEX, LDS, ALU0
+ 8  EXP, TEX, LDS, ALU0, XDL, LD_SCALE
+ 9  EXP, TEX, LDS, ALU0, XDL XDL2x, LD_SCALE
+10  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, DLops, PK_F32, XDL2x, LD_SCALE
+)"},
+    // 4x4x1F32
+    {{"V_MFMA_F32_4X4X1F32"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS
+ 2  EXP, TEX, LDS, SGEMM
+ 3  EXP, TEX, LDS, SGEMM , LD_SCALE
+ 4  EXP, TEX, LDS, DLops, SGEMM, DGEMM, XDL, XDL2x, ALU0/1, PK_F32
+)"},
+    // 16x16x1F32
+    {{"V_MFMA_F32_16X16X1F32"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS
+ 8  EXP, TEX, LDS, SGEMM
+ 9  EXP, TEX, LDS, SGEMM, LD_SCALE
+10  EXP, TEX, LDS, DLops, SGEMM, DGEMM, XDL, XDL2x, ALU0/1, PK_F32
+)"},
+    // 16x16x4F32
+    {{"V_MFMA_F32_16X16X4F32"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS
+ 2  EXP, TEX, LDS
+ 5  EXP, TEX, LDS
+ 6  EXP, TEX, LDS
+ 8  EXP, TEX, LDS, SGEMM
+ 9  EXP, TEX, LDS, SGEMM, LD_SCALE
+10  EXP, TEX, LDS, DLops, SGEMM, DGEMM, XDL, XDL2x, ALU0/1, PK_F32
+)"},
+    // 32x32x1F32
+    {{"V_MFMA_F32_32X32X1F32"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS
+16  EXP, TEX, LDS, SGEMM
+17  EXP, TEX, LDS, SGEMM LD_SCALE
+18  EXP, TEX, LDS, DLops, SGEMM, DGEMM, XDL, XDL2x, ALU0/1, PK_F32
+)"},
+    // 32x32x2F32
+    {{"V_MFMA_F32_32X32X2F32"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS
+ 2  EXP, TEX, LDS
+ 3  EXP, TEX, LDS
+ 4  EXP, TEX, LDS
+ 5  EXP, TEX, LDS
+ 6  EXP, TEX, LDS
+ 7  EXP, TEX, LDS
+ 8  EXP, TEX, LDS
+ 9  EXP, TEX, LDS
+10  EXP, TEX, LDS
+11  EXP, TEX, LDS
+12  EXP, TEX, LDS
+13  EXP, TEX, LDS
+14  EXP, TEX, LDS
+15  EXP, TEX, LDS
+16  EXP, TEX, LDS, SGEMM
+17  EXP, TEX, LDS, SGEMM LD_SCALE
+18  EXP, TEX, LDS, DLops, SGEMM, DGEMM, XDL, XDL2x, ALU0/1, PK_F32
+)"},
+    // 4X4X4F64
+    {{"V_MFMA_F64_4X4X4F64"},
+     R"(
+ 0  none
+ 1  EXP, TEX, LDS
+ 2  EXP, TEX, LDS
+ 4  EXP, TEX, LDS, DGEMM
+ 5  EXP, TEX, LDS, DGEMM LD_SCALE
+ 6  EXP, TEX, LDS, DLops, SGEMM, DGEMM, XDL, XDL2x, ALU0/1, PK_F32
+)"},
+};
+
+// Every gfx950 MFMA appears in a group. The scaled MFMAs share the groups of
+// their unscaled forms.
+TEST_F(AMDGPUMFMACoExecRules, GFX950CoExecTable) {
+  auto TM =
+      createAMDGPUTargetMachine(Triple("amdgcn-amd-amdhsa"), "gfx950", "");
+  if (!TM)
+    GTEST_SKIP();
+  MFMACoExecTest Test(std::move(TM));
+  // MFMAs gfx950 added, and DGEMM 16x16x4, which takes 16 passes on gfx950.
+  const CoExecTableGroup Groups[] = {
+      // MFMA_16X16X128_F8F4F6 (MatrixA != F8 & MatrixB != F8 )
+      // MFMA_16X16X32_BF16
+      // MFMA_16X16X64_I8
+      // MFMA_16X16X32_F16
+      {{"V_MFMA_F32_16X16X128_F8F6F4_f4_f4",
+        "V_MFMA_F32_16X16X128_F8F6F4_f4_f6",
+        "V_MFMA_F32_16X16X128_F8F6F4_f6_f4",
+        "V_MFMA_F32_16X16X128_F8F6F4_f6_f6",
+        "V_MFMA_SCALE_F32_16X16X128_F8F6F4_f4_f4",
+        "V_MFMA_SCALE_F32_16X16X128_F8F6F4_f4_f6",
+        "V_MFMA_SCALE_F32_16X16X128_F8F6F4_f6_f4",
+        "V_MFMA_SCALE_F32_16X16X128_F8F6F4_f6_f6", "V_MFMA_F32_16X16X32_BF16",
+        "V_MFMA_I32_16X16X64_I8", "V_MFMA_F32_16X16X32_F16"},
+       R"(
+ 0  none
+ 1  none
+ 2  EXP, TEX, LDS, ALU0
+ 3  EXP, TEX, LDS, ALU0, LD_SCALE
+ 4  EXP, TEX, LDS, ALU0, LD_SCALE , XDL2x
+ 5  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+ 6  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+ 7  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, DLops, PK_F32, LD_SCALE , XDL2x
+)"},
+      // 16X16X128_F8F4F6 (MatrixA or MatrixB = F8)
+      {{"V_MFMA_F32_16X16X128_F8F6F4_f4_f8",
+        "V_MFMA_F32_16X16X128_F8F6F4_f6_f8",
+        "V_MFMA_F32_16X16X128_F8F6F4_f8_f4",
+        "V_MFMA_F32_16X16X128_F8F6F4_f8_f6",
+        "V_MFMA_F32_16X16X128_F8F6F4_f8_f8",
+        "V_MFMA_SCALE_F32_16X16X128_F8F6F4_f4_f8",
+        "V_MFMA_SCALE_F32_16X16X128_F8F6F4_f6_f8",
+        "V_MFMA_SCALE_F32_16X16X128_F8F6F4_f8_f4",
+        "V_MFMA_SCALE_F32_16X16X128_F8F6F4_f8_f6",
+        "V_MFMA_SCALE_F32_16X16X128_F8F6F4_f8_f8"},
+       R"(
+ 0  none
+ 1  none
+ 2  EXP, TEX, LDS
+ 3  EXP, TEX, LDS, ALU0
+ 4  EXP, TEX, LDS, ALU0
+ 5  EXP, TEX, LDS, ALU0
+ 6  EXP, TEX, LDS, ALU0
+ 7  EXP, TEX, LDS, ALU0 LD_SCALE
+ 8  EXP, TEX, LDS, ALU0, LD_SCALE , XDL2x
+ 9  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+10  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+11  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, DLops, PK_F32, LD_SCALE , XDL2x
+)"},
+      // 32X32X64_F8F4F6 (MatrixA != F8 & MatrixB != F8 )
+      // MFMA_32X32X16_BF16
+      // MFMA_32X32X32_I8
+      // MFMA_32X32X16_F16
+      {{"V_MFMA_F32_32X32X64_F8F6F4_f4_f4", "V_MFMA_F32_32X32X64_F8F6F4_f4_f6",
+        "V_MFMA_F32_32X32X64_F8F6F4_f6_f4", "V_MFMA_F32_32X32X64_F8F6F4_f6_f6",
+        "V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f4",
+        "V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f6",
+        "V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f4",
+        "V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f6", "V_MFMA_F32_32X32X16_BF16",
+        "V_MFMA_I32_32X32X32_I8", "V_MFMA_F32_32X32X16_F16"},
+       R"(
+ 0  none
+ 1  none
+ 2  EXP, TEX, LDS, ALU0
+ 7  EXP, TEX, LDS, ALU0, LD_SCALE
+ 8  EXP, TEX, LDS, ALU0, LD_SCALE , XDL2x
+ 9  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+10  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+11  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, DLops, PK_F32, LD_SCALE , XDL2x
+)"},
+      // 32X32X64_F8F4F6 (MatrixA == F8 or MatrixB == F8 )
+      {{"V_MFMA_F32_32X32X64_F8F6F4_f4_f8", "V_MFMA_F32_32X32X64_F8F6F4_f6_f8",
+        "V_MFMA_F32_32X32X64_F8F6F4_f8_f4", "V_MFMA_F32_32X32X64_F8F6F4_f8_f6",
+        "V_MFMA_F32_32X32X64_F8F6F4_f8_f8",
+        "V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f8",
+        "V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f8",
+        "V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f4",
+        "V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f6",
+        "V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f8"},
+       R"(
+ 0  none
+ 1  none
+ 2  EXP, TEX, LDS
+ 3  EXP, TEX, LDS, ALU0
+ 4  EXP, TEX, LDS, ALU0
+ 5  EXP, TEX, LDS, ALU0
+ 6  EXP, TEX, LDS, ALU0
+ 7  EXP, TEX, LDS, ALU0
+ 8  EXP, TEX, LDS, ALU0
+ 9  EXP, TEX, LDS, ALU0
+10  EXP, TEX, LDS, ALU0
+11  EXP, TEX, LDS, ALU0
+12  EXP, TEX, LDS, ALU0
+13  EXP, TEX, LDS, ALU0
+14  EXP, TEX, LDS, ALU0
+15  EXP, TEX, LDS, ALU0, LD_SCALE
+16  EXP, TEX, LDS, ALU0, LD_SCALE , XDL2x
+17  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+18  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+19  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, DLops, PK_F32, LD_SCALE , XDL2x
+)"},
+      // SMFMAC_16X16X64_BF16
+      // SMFMAC_16X16X128_I8
+      // SMFMAC_16X16X128_(F8/BF8)
+      // SMFMAC_16X16X64_F16
+      {{"V_SMFMAC_F32_16X16X64_BF16", "V_SMFMAC_I32_16X16X128_I8",
+        "V_SMFMAC_F32_16X16X128_BF8_BF8", "V_SMFMAC_F32_16X16X128_BF8_FP8",
+        "V_SMFMAC_F32_16X16X128_FP8_BF8", "V_SMFMAC_F32_16X16X128_FP8_FP8",
+        "V_SMFMAC_F32_16X16X64_F16"},
+       R"(
+ 0  none
+ 1  none
+ 2  EXP, TEX, LDS
+ 3  EXP, TEX, LDS, ALU0, LD_SCALE
+ 4  EXP, TEX, LDS, ALU0, LD_SCALE , XDL2x
+ 5  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+ 6  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+ 7  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, DLops, PK_F32, LD_SCALE , XDL2x
+)"},
+      // SMFMAC_32X32X32_BF16
+      // SMFMAC_32X32X64_I8
+      // SMFMAC_32X32X64_(F8/BF8)
+      // SMFMAC_32X32X32_F16
+      {{"V_SMFMAC_F32_32X32X32_BF16", "V_SMFMAC_I32_32X32X64_I8",
+        "V_SMFMAC_F32_32X32X64_BF8_BF8", "V_SMFMAC_F32_32X32X64_BF8_FP8",
+        "V_SMFMAC_F32_32X32X64_FP8_BF8", "V_SMFMAC_F32_32X32X64_FP8_FP8",
+        "V_SMFMAC_F32_32X32X32_F16"},
+       R"(
+ 0  none
+ 1  none
+ 2  none
+ 3  EXP, TEX, LDS,ALU0
+ 7  EXP, TEX, LDS, ALU0, LD_SCALE
+ 8  EXP, TEX, LDS, ALU0, LD_SCALE , XDL2x
+ 9  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+10  EXP, TEX, LDS, ALU0, XDL, LD_SCALE , XDL2x
+11  EXP, TEX, LDS, ALU0/1, XDL, S/DGEMM, DLops, PK_F32, LD_SCALE , XDL2x
+)"},
+      // 16X16X4F64
+      {{"V_MFMA_F64_16X16X4F64"},
+       R"(
+ 0  none
+ 1  EXP, TEX, LDS
+ 2  EXP, TEX, LDS
+ 3  EXP, TEX, LDS
+ 4  EXP, TEX, LDS
+ 5  EXP, TEX, LDS
+ 6  EXP, TEX, LDS
+ 7  EXP, TEX, LDS
+ 8  EXP, TEX, LDS
+ 9  EXP, TEX, LDS
+10  EXP, TEX, LDS
+11  EXP, TEX, LDS
+12  EXP, TEX, LDS
+13  EXP, TEX, LDS
+14  EXP, TEX, LDS
+15  EXP, TEX, LDS
+16  EXP, TEX, LDS, DGEMM
+17  EXP, TEX, LDS, DGEMM, LD_SCALE
+18  EXP, TEX, LDS, DLops, SGEMM, DGEMM, XDL, XDL2x, LD_SCALE, ALU0/1, PK_F32
+)"},
+  };
+  StringSet<> Checked = checkTableGroups(Test, Groups);
+  Checked.insert_range(checkTableGroups(Test, SharedGroups).keys());
+
+  const SIInstrInfo &TII = Test.getInstrInfo();
+  for (unsigned Op = 0; Op < TII.getNumOpcodes(); ++Op) {
+    if (!TII.isMFMA(Op) || !TII.get(Op).isPseudo())
+      continue;
+    int MCOp = TII.pseudoToMCOpcode(Op);
+    if (MCOp != -1 && AMDGPU_MC::isOpcodeAvailable(
+                          MCOp, Test.getSubtarget().getFeatureBits()))
+      EXPECT_TRUE(Checked.contains(TII.getName(Op))) << TII.getName(Op);
+  }
+}
+
+TEST_F(AMDGPUMFMACoExecRules, GFX942CoExecTable) {
+  auto TM =
+      createAMDGPUTargetMachine(Triple("amdgcn-amd-amdhsa"), "gfx942", "");
+  if (!TM)
+    GTEST_SKIP();
+  MFMACoExecTest Test(std::move(TM));
+  checkTableGroups(Test, SharedGroups);
 }
