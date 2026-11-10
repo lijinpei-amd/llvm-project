@@ -28,6 +28,7 @@
 #include "llvm/CodeGen/TargetSchedule.h"
 #include "llvm/Support/BranchProbability.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/MathExtras.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "si-pre-emit-peephole"
@@ -43,6 +44,10 @@ static cl::opt<bool> ShrinkLateCompareMask(
 static cl::opt<bool> PreferUnsignedAdd(
     "amdgpu-prefer-unsigned-add", cl::Hidden, cl::init(false),
     cl::desc("Prefer unsigned scalar addition when SCC is dead"));
+
+static cl::opt<bool> PreferGEScalarBounds(
+    "amdgpu-prefer-ge-scalar-bounds", cl::Hidden, cl::init(false),
+    cl::desc("Prefer greater-or-equal signed scalar bounds"));
 
 STATISTIC(NumModeWritesRemoved,
           "Number of redundant mode register writes removed");
@@ -68,6 +73,7 @@ private:
   bool optimizeVccBranch(MachineInstr &MI) const;
   bool optimizeCompareMask(MachineInstr &MI, const LiveRegUnits &Live) const;
   bool optimizeScalarAddition(MachineInstr &MI, const LiveRegUnits &Live) const;
+  bool optimizeScalarBound(MachineInstr &MI) const;
   void updateMLIBeforeRemovingEdge(MachineBasicBlock *From,
                                    MachineBasicBlock *To) const;
   bool optimizeSetGPR(MachineInstr &First, MachineInstr &MI) const;
@@ -140,6 +146,21 @@ INITIALIZE_PASS(SIPreEmitPeepholeLegacy, DEBUG_TYPE,
 char SIPreEmitPeepholeLegacy::ID = 0;
 
 char &llvm::SIPreEmitPeepholeID = SIPreEmitPeepholeLegacy::ID;
+
+bool SIPreEmitPeephole::optimizeScalarBound(MachineInstr &MI) const {
+  unsigned Opcode = MI.getOpcode();
+  if (MI.isBundled() ||
+      (Opcode != AMDGPU::S_CMP_GT_I32 && Opcode != AMDGPU::S_CMPK_GT_I32) ||
+      !MI.getOperand(1).isImm())
+    return false;
+  int64_t Bound = SignExtend64(MI.getOperand(1).getImm(),
+                              Opcode == AMDGPU::S_CMPK_GT_I32 ? 16 : 32);
+  if (Bound == INT32_MAX)
+    return false;
+  MI.getOperand(1).setImm(Bound + 1);
+  MI.setDesc(TII->get(AMDGPU::S_CMP_GE_I32));
+  return true;
+}
 
 bool SIPreEmitPeephole::optimizeScalarAddition(MachineInstr &MI,
                                                const LiveRegUnits &Live) const {
@@ -951,6 +972,11 @@ bool SIPreEmitPeephole::run(MachineFunction &MF, MachineLoopInfo *LoopInfo) {
     for (MachineInstr &MI : make_early_inc_range(MBB.instrs()))
       if (MI.isInlineAsm())
         Changed |= TII->expandSingleOpInlineAsm(MI);
+
+  if (PreferGEScalarBounds)
+    for (MachineBasicBlock &MBB : MF)
+      for (MachineInstr &MI : MBB)
+        Changed |= optimizeScalarBound(MI);
 
   if (ShrinkLateCompareMask || PreferUnsignedAdd) {
     for (MachineBasicBlock &MBB : MF) {
