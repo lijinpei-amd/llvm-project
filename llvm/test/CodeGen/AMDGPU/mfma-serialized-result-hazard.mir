@@ -118,3 +118,23 @@ body: |
     $vgpr48 = V_ADD_F32_e32 $vgpr0, $vgpr64, implicit $mode, implicit $exec
     S_ENDPGM 0
 ...
+---
+name: earlier_result_write
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $vgpr64_vgpr65_vgpr66_vgpr67_vgpr68_vgpr69_vgpr70_vgpr71, $vgpr72_vgpr73_vgpr74_vgpr75_vgpr76_vgpr77_vgpr78_vgpr79
+    ; CHECK-LABEL: name: earlier_result_write
+    ; CHECK: liveins: $vgpr64_vgpr65_vgpr66_vgpr67_vgpr68_vgpr69_vgpr70_vgpr71, $vgpr72_vgpr73_vgpr74_vgpr75_vgpr76_vgpr77_vgpr78_vgpr79
+    ; CHECK-NEXT: {{  $}}
+    ; CHECK-NEXT: early-clobber $vgpr0_vgpr1_vgpr2_vgpr3_vgpr4_vgpr5_vgpr6_vgpr7_vgpr8_vgpr9_vgpr10_vgpr11_vgpr12_vgpr13_vgpr14_vgpr15 = V_MFMA_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64 $vgpr64_vgpr65_vgpr66_vgpr67_vgpr68_vgpr69_vgpr70_vgpr71, $vgpr72_vgpr73_vgpr74_vgpr75_vgpr76_vgpr77_vgpr78_vgpr79, 0, 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: early-clobber $vgpr32_vgpr33_vgpr34_vgpr35_vgpr36_vgpr37_vgpr38_vgpr39_vgpr40_vgpr41_vgpr42_vgpr43_vgpr44_vgpr45_vgpr46_vgpr47 = V_MFMA_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64 $vgpr64_vgpr65_vgpr66_vgpr67_vgpr68_vgpr69_vgpr70_vgpr71, $vgpr72_vgpr73_vgpr74_vgpr75_vgpr76_vgpr77_vgpr78_vgpr79, 0, 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_NOP 15
+    ; CHECK-NEXT: S_NOP 2
+    ; CHECK-NEXT: $vgpr0 = V_MOV_B32_e32 0, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0
+    $vgpr0_vgpr1_vgpr2_vgpr3_vgpr4_vgpr5_vgpr6_vgpr7_vgpr8_vgpr9_vgpr10_vgpr11_vgpr12_vgpr13_vgpr14_vgpr15 = V_MFMA_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64 $vgpr64_vgpr65_vgpr66_vgpr67_vgpr68_vgpr69_vgpr70_vgpr71, $vgpr72_vgpr73_vgpr74_vgpr75_vgpr76_vgpr77_vgpr78_vgpr79, 0, 0, 0, implicit $mode, implicit $exec
+    $vgpr32_vgpr33_vgpr34_vgpr35_vgpr36_vgpr37_vgpr38_vgpr39_vgpr40_vgpr41_vgpr42_vgpr43_vgpr44_vgpr45_vgpr46_vgpr47 = V_MFMA_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64 $vgpr64_vgpr65_vgpr66_vgpr67_vgpr68_vgpr69_vgpr70_vgpr71, $vgpr72_vgpr73_vgpr74_vgpr75_vgpr76_vgpr77_vgpr78_vgpr79, 0, 0, 0, implicit $mode, implicit $exec
+    $vgpr0 = V_MOV_B32_e32 0, implicit $exec
+    S_ENDPGM 0
+...
