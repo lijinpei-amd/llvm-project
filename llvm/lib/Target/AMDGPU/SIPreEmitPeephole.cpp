@@ -723,6 +723,9 @@ void SIPreEmitPeephole::collectUnpackingCandidates(
     uint32_t UnpackedOpCode = mapToUnpackedOpcode(Instr);
     bool IsUnpackable =
         !(UnpackedOpCode == std::numeric_limits<uint32_t>::max());
+    if (Instr.getOpcode() == AMDGPU::SCHED_BARRIER &&
+        Instr.getOperand(0).getImm() == 0)
+      return;
     if (Instr.isMetaInstruction())
       continue;
     if ((Instr.isTerminator()) ||
