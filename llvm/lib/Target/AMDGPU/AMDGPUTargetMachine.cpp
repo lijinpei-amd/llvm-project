@@ -438,6 +438,11 @@ static cl::opt<bool, true> EnableLowerModuleLDS(
     cl::location(AMDGPUTargetMachine::EnableLowerModuleLDS), cl::init(true),
     cl::Hidden);
 
+static cl::opt<bool> PreserveUniformIrreducible(
+    "amdgpu-preserve-uniform-irreducible", cl::Hidden, cl::init(false),
+    cl::desc(
+        "Preserve irreducible cycles with uniform internal and entry control"));
+
 // Scheduler selection is consulted both when creating the scheduler and from
 // overrideSchedPolicy(), so keep the attribute and global command line handling
 // in one helper.
@@ -1533,7 +1538,7 @@ bool GCNPassConfig::addPreISel() {
   // Merge divergent exit nodes. StructurizeCFG won't recognize the multi-exit
   // regions formed by them.
   addPass(&AMDGPUUnifyDivergentExitNodesID);
-  addPass(createFixIrreduciblePass());
+  addPass(createFixIrreduciblePass(PreserveUniformIrreducible));
   addPass(createUnifyLoopExitsPass());
   addPass(createStructurizeCFGPass(/*SkipUniformRegions=*/true));
 
@@ -2305,7 +2310,7 @@ void AMDGPUCodeGenPassBuilder::addPreISel(PassManagerWrapper &PMW) {
   // regions formed by them.
 
   addFunctionPass(AMDGPUUnifyDivergentExitNodesPass(), PMW);
-  addFunctionPass(FixIrreduciblePass(), PMW);
+  addFunctionPass(FixIrreduciblePass(PreserveUniformIrreducible), PMW);
   addFunctionPass(UnifyLoopExitsPass(), PMW);
   addFunctionPass(StructurizeCFGPass(/*SkipUniformRegions=*/true), PMW);
 

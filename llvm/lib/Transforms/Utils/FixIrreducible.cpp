@@ -129,9 +129,11 @@
 
 #include "llvm/Transforms/Utils/FixIrreducible.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/Analysis/CycleAnalysis.h"
 #include "llvm/Analysis/DomTreeUpdater.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/UniformityAnalysis.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
@@ -147,13 +149,17 @@ using namespace llvm;
 namespace {
 struct FixIrreducible : public FunctionPass {
   static char ID;
-  FixIrreducible() : FunctionPass(ID) {
+  bool SkipUniformCycles;
+  FixIrreducible(bool SkipUniformCycles = false)
+      : FunctionPass(ID), SkipUniformCycles(SkipUniformCycles) {
     initializeFixIrreduciblePass(*PassRegistry::getPassRegistry());
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<CycleInfoWrapperPass>();
+    if (SkipUniformCycles)
+      AU.addRequired<UniformityInfoWrapperPass>();
     AU.addPreserved<DominatorTreeWrapperPass>();
     AU.addPreserved<CycleInfoWrapperPass>();
     AU.addPreserved<LoopInfoWrapperPass>();
@@ -167,12 +173,17 @@ char FixIrreducible::ID = 0;
 
 FunctionPass *llvm::createFixIrreduciblePass() { return new FixIrreducible(); }
 
+FunctionPass *llvm::createFixIrreduciblePass(bool SkipUniformCycles) {
+  return new FixIrreducible(SkipUniformCycles);
+}
+
 INITIALIZE_PASS_BEGIN(FixIrreducible, "fix-irreducible",
                       "Convert irreducible control-flow into natural loops",
                       false /* Only looks at CFG */, false /* Analysis Pass */)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(CycleInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(UniformityInfoWrapperPass)
 INITIALIZE_PASS_END(FixIrreducible, "fix-irreducible",
                     "Convert irreducible control-flow into natural loops",
                     false /* Only looks at CFG */, false /* Analysis Pass */)
@@ -420,14 +431,61 @@ static bool fixIrreducible(CycleRef C, CycleInfo &CI, DominatorTree &DT,
   return true;
 }
 
+static bool isUniformCycle(CycleRef C, const CycleInfo &CI, DominatorTree &DT,
+                           const UniformityInfo &UI) {
+  auto IsUniform = [&](BasicBlock *BB) {
+    Instruction *Term = BB->getTerminator();
+    return isa<UncondBrInst, CondBrInst, SwitchInst>(Term) &&
+           UI.isUniformTerminator(Term);
+  };
+  if (!llvm::all_of(CI.getBlocks(C), IsUniform))
+    return false;
+
+  BasicBlock *CommonDom = nullptr;
+  for (BasicBlock *Entry : CI.getEntries(C))
+    CommonDom =
+        CommonDom ? DT.findNearestCommonDominator(CommonDom, Entry) : Entry;
+  if (!CommonDom)
+    return false;
+
+  SmallVector<BasicBlock *, 8> Worklist;
+  for (BasicBlock *Entry : CI.getEntries(C))
+    for (BasicBlock *Pred : predecessors(Entry))
+      if (!CI.contains(C, Pred))
+        Worklist.push_back(Pred);
+
+  SmallPtrSet<BasicBlock *, 16> Visited;
+  while (!Worklist.empty()) {
+    BasicBlock *BB = Worklist.pop_back_val();
+    if (!Visited.insert(BB).second)
+      continue;
+    if (!DT.isReachableFromEntry(BB) || !IsUniform(BB))
+      return false;
+    if (BB == CommonDom)
+      continue;
+    for (BasicBlock *Pred : predecessors(BB))
+      if (!CI.contains(C, Pred))
+        Worklist.push_back(Pred);
+  }
+  return Visited.contains(CommonDom);
+}
+
 static bool FixIrreducibleImpl(Function &F, CycleInfo &CI, DominatorTree &DT,
-                               LoopInfo *LI) {
+                               LoopInfo *LI,
+                               const UniformityInfo *UI = nullptr) {
   LLVM_DEBUG(dbgs() << "===== Fix irreducible control-flow in function: "
                     << F.getName() << "\n");
 
+  SmallDenseSet<CycleRef, 8> UniformCycles;
+  if (UI)
+    for (auto C : CI.cycles())
+      if (!CI.isReducible(C) && isUniformCycle(C, CI, DT, *UI))
+        UniformCycles.insert(C);
+
   bool Changed = false;
   for (auto C : CI.cycles())
-    Changed |= fixIrreducible(C, CI, DT, LI);
+    if (!UniformCycles.contains(C))
+      Changed |= fixIrreducible(C, CI, DT, LI);
 
   if (!Changed)
     return false;
@@ -446,7 +504,11 @@ bool FixIrreducible::runOnFunction(Function &F) {
   LoopInfo *LI = LIWP ? &LIWP->getLoopInfo() : nullptr;
   auto &CI = getAnalysis<CycleInfoWrapperPass>().getResult();
   auto &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
-  return FixIrreducibleImpl(F, CI, DT, LI);
+  const UniformityInfo *UI =
+      SkipUniformCycles
+          ? &getAnalysis<UniformityInfoWrapperPass>().getUniformityInfo()
+          : nullptr;
+  return FixIrreducibleImpl(F, CI, DT, LI, UI);
 }
 
 PreservedAnalyses FixIrreduciblePass::run(Function &F,
@@ -455,7 +517,9 @@ PreservedAnalyses FixIrreduciblePass::run(Function &F,
   auto &CI = AM.getResult<CycleAnalysis>(F);
   auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
 
-  if (!FixIrreducibleImpl(F, CI, DT, LI))
+  const UniformityInfo *UI =
+      SkipUniformCycles ? &AM.getResult<UniformityInfoAnalysis>(F) : nullptr;
+  if (!FixIrreducibleImpl(F, CI, DT, LI, UI))
     return PreservedAnalyses::all();
 
   PreservedAnalyses PA;

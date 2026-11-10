@@ -116,6 +116,7 @@ LLVM_ABI FunctionPass *createUnifyLoopExitsPass();
 // into a natural loop.
 //
 LLVM_ABI FunctionPass *createFixIrreduciblePass();
+LLVM_ABI FunctionPass *createFixIrreduciblePass(bool SkipUniformCycles);
 
 //===----------------------------------------------------------------------===//
 //

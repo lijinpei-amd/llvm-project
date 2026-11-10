@@ -13,7 +13,12 @@
 
 namespace llvm {
 struct FixIrreduciblePass : RequiredPassInfoMixin<FixIrreduciblePass> {
+  explicit FixIrreduciblePass(bool SkipUniformCycles = false)
+      : SkipUniformCycles(SkipUniformCycles) {}
   LLVM_ABI PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
+
+private:
+  bool SkipUniformCycles;
 };
 } // namespace llvm
 
