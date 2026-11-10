@@ -12,8 +12,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:vreg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64_:%[0-9]+]]:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64_]]
+    ; CHECK-NEXT: early-clobber %5:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f8_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_256_align2 = IMPLICIT_DEF
     %1:vreg_256_align2 = IMPLICIT_DEF
     %2:vreg_512_align2 = IMPLICIT_DEF
@@ -34,8 +34,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:areg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f8_e64_:%[0-9]+]]:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f8_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f8_e64_]]
+    ; CHECK-NEXT: early-clobber %5:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f8_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_256_align2 = IMPLICIT_DEF
     %1:vreg_256_align2 = IMPLICIT_DEF
     %2:areg_512_align2 = IMPLICIT_DEF
@@ -56,8 +56,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:vreg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f6_vgprcd_e64_:%[0-9]+]]:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f6_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f6_vgprcd_e64_]]
+    ; CHECK-NEXT: early-clobber %5:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f6_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_256_align2 = IMPLICIT_DEF
     %1:vreg_192_align2 = IMPLICIT_DEF
     %2:vreg_512_align2 = IMPLICIT_DEF
@@ -78,8 +78,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:areg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f6_e64_:%[0-9]+]]:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f6_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f6_e64_]]
+    ; CHECK-NEXT: early-clobber %5:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f6_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_256_align2 = IMPLICIT_DEF
     %1:vreg_192_align2 = IMPLICIT_DEF
     %2:areg_512_align2 = IMPLICIT_DEF
@@ -100,8 +100,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:vreg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f4_vgprcd_e64_:%[0-9]+]]:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f4_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f4_vgprcd_e64_]]
+    ; CHECK-NEXT: early-clobber %5:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f4_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_256_align2 = IMPLICIT_DEF
     %1:vreg_128_align2 = IMPLICIT_DEF
     %2:vreg_512_align2 = IMPLICIT_DEF
@@ -122,8 +122,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:areg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f4_e64_:%[0-9]+]]:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f4_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f4_e64_]]
+    ; CHECK-NEXT: early-clobber %5:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f8_f4_e64 [[DEF]], [[DEF1]], [[DEF2]], 0, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_256_align2 = IMPLICIT_DEF
     %1:vreg_128_align2 = IMPLICIT_DEF
     %2:areg_512_align2 = IMPLICIT_DEF
@@ -144,8 +144,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:vreg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f8_vgprcd_e64_:%[0-9]+]]:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f8_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f8_vgprcd_e64_]]
+    ; CHECK-NEXT: early-clobber %5:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f8_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_192_align2 = IMPLICIT_DEF
     %1:vreg_256_align2 = IMPLICIT_DEF
     %2:vreg_512_align2 = IMPLICIT_DEF
@@ -166,8 +166,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:areg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f8_e64_:%[0-9]+]]:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f8_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f8_e64_]]
+    ; CHECK-NEXT: early-clobber %5:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f8_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_192_align2 = IMPLICIT_DEF
     %1:vreg_256_align2 = IMPLICIT_DEF
     %2:areg_512_align2 = IMPLICIT_DEF
@@ -188,8 +188,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:vreg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f6_vgprcd_e64_:%[0-9]+]]:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f6_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f6_vgprcd_e64_]]
+    ; CHECK-NEXT: early-clobber %5:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f6_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_192_align2 = IMPLICIT_DEF
     %1:vreg_192_align2 = IMPLICIT_DEF
     %2:vreg_512_align2 = IMPLICIT_DEF
@@ -210,8 +210,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:areg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f6_e64_:%[0-9]+]]:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f6_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f6_e64_]]
+    ; CHECK-NEXT: early-clobber %5:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f6_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_192_align2 = IMPLICIT_DEF
     %1:vreg_192_align2 = IMPLICIT_DEF
     %2:areg_512_align2 = IMPLICIT_DEF
@@ -232,8 +232,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:vreg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f4_vgprcd_e64_:%[0-9]+]]:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f4_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f4_vgprcd_e64_]]
+    ; CHECK-NEXT: early-clobber %5:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f4_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_192_align2 = IMPLICIT_DEF
     %1:vreg_128_align2 = IMPLICIT_DEF
     %2:vreg_512_align2 = IMPLICIT_DEF
@@ -254,8 +254,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:areg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f4_e64_:%[0-9]+]]:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f4_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f4_e64_]]
+    ; CHECK-NEXT: early-clobber %5:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f6_f4_e64 [[DEF]], [[DEF1]], [[DEF2]], 2, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_192_align2 = IMPLICIT_DEF
     %1:vreg_128_align2 = IMPLICIT_DEF
     %2:areg_512_align2 = IMPLICIT_DEF
@@ -276,8 +276,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:vreg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f8_vgprcd_e64_:%[0-9]+]]:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f8_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f8_vgprcd_e64_]]
+    ; CHECK-NEXT: early-clobber %5:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f8_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_128_align2 = IMPLICIT_DEF
     %1:vreg_256_align2 = IMPLICIT_DEF
     %2:vreg_512_align2 = IMPLICIT_DEF
@@ -298,8 +298,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:areg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f8_e64_:%[0-9]+]]:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f8_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f8_e64_]]
+    ; CHECK-NEXT: early-clobber %5:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f8_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 0, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_128_align2 = IMPLICIT_DEF
     %1:vreg_256_align2 = IMPLICIT_DEF
     %2:areg_512_align2 = IMPLICIT_DEF
@@ -320,8 +320,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:vreg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f6_vgprcd_e64_:%[0-9]+]]:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f6_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f6_vgprcd_e64_]]
+    ; CHECK-NEXT: early-clobber %5:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f6_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_128_align2 = IMPLICIT_DEF
     %1:vreg_192_align2 = IMPLICIT_DEF
     %2:vreg_512_align2 = IMPLICIT_DEF
@@ -342,8 +342,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:areg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f6_e64_:%[0-9]+]]:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f6_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f6_e64_]]
+    ; CHECK-NEXT: early-clobber %5:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f6_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 2, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_128_align2 = IMPLICIT_DEF
     %1:vreg_192_align2 = IMPLICIT_DEF
     %2:areg_512_align2 = IMPLICIT_DEF
@@ -364,8 +364,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:vreg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f4_vgprcd_e64_:%[0-9]+]]:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f4_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f4_vgprcd_e64_]]
+    ; CHECK-NEXT: early-clobber %5:vreg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f4_vgprcd_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_128_align2 = IMPLICIT_DEF
     %1:vreg_128_align2 = IMPLICIT_DEF
     %2:vreg_512_align2 = IMPLICIT_DEF
@@ -386,8 +386,8 @@ body: |
     ; CHECK-NEXT: [[DEF2:%[0-9]+]]:areg_512_align2 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF3:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
     ; CHECK-NEXT: [[DEF4:%[0-9]+]]:vgpr_32 = IMPLICIT_DEF
-    ; CHECK-NEXT: [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f4_e64_:%[0-9]+]]:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f4_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit [[V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f4_e64_]]
+    ; CHECK-NEXT: early-clobber %5:areg_512_align2 = V_MFMA_SCALE_F32_32X32X64_F8F6F4_f4_f4_e64 [[DEF]], [[DEF1]], [[DEF2]], 4, 4, [[DEF3]], [[DEF4]], 0, 0, implicit $mode, implicit $exec
+    ; CHECK-NEXT: S_ENDPGM 0, implicit [[DEF2]], implicit %5
     %0:vreg_128_align2 = IMPLICIT_DEF
     %1:vreg_128_align2 = IMPLICIT_DEF
     %2:areg_512_align2 = IMPLICIT_DEF

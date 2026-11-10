@@ -1288,6 +1288,7 @@ class MAIInst<string OpName, VOPProfile P, SDPatternOperator node, bit Scaled = 
 // FIXME: Usual syntax for op_sel is quite hostile here.
 class ScaledMAIInst<string OpName, MAIInst BaseInst, SDPatternOperator node> :
   MAIInst<OpName, BaseInst.Pfl, node, /*Scaled=*/true> {
+  let Constraints = BaseInst.Constraints;
   // Append operands from V_MFMA_LD_SCALE_B32, but we need to rename them.
   // Restrict to VGPR only (VRegSrc_32) for the scale operands to workaround a
   // hardware design defect: For all Inline/SGPR constants, SP HW use bits
