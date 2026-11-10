@@ -26,9 +26,14 @@
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/TargetSchedule.h"
 #include "llvm/Support/BranchProbability.h"
+#include "llvm/Support/CommandLine.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "si-pre-emit-peephole"
+
+static cl::opt<bool> PreferSCC1Branches(
+    "amdgpu-prefer-scc1-branches", cl::Hidden, cl::init(false),
+    cl::desc("Prefer SCC1 branches for unsigned scalar guards"));
 
 STATISTIC(NumModeWritesRemoved,
           "Number of redundant mode register writes removed");
@@ -869,6 +874,22 @@ bool SIPreEmitPeephole::run(MachineFunction &MF, MachineLoopInfo *LoopInfo) {
     // Check first terminator for branches to optimize
     if (TermI != MBB.end()) {
       MachineInstr &MI = *TermI;
+      if (PreferSCC1Branches && MI.getOpcode() == AMDGPU::S_CBRANCH_SCC0 &&
+          TermI != MBB.begin()) {
+        auto CmpI = std::prev(TermI);
+        if (CmpI->getOpcode() == AMDGPU::S_CMP_LT_U32 &&
+            llvm::none_of(llvm::make_range(std::next(TermI), MBB.end()),
+                          [&](const MachineInstr &I) {
+                            return I.readsRegister(AMDGPU::SCC, TRI);
+                          }) &&
+            llvm::none_of(MBB.successors(), [](const MachineBasicBlock *S) {
+              return S->isLiveIn(AMDGPU::SCC);
+            })) {
+          CmpI->setDesc(TII->get(AMDGPU::S_CMP_GE_U32));
+          MI.setDesc(TII->get(AMDGPU::S_CBRANCH_SCC1));
+          Changed = true;
+        }
+      }
       switch (MI.getOpcode()) {
       case AMDGPU::S_CBRANCH_VCCZ:
       case AMDGPU::S_CBRANCH_VCCNZ:
