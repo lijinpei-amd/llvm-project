@@ -21,6 +21,7 @@
 #include "AMDGPU.h"
 #include "GCNSubtarget.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/CodeGen/LiveRegUnits.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
@@ -34,6 +35,10 @@ using namespace llvm;
 static cl::opt<bool> PreferSCC1Branches(
     "amdgpu-prefer-scc1-branches", cl::Hidden, cl::init(false),
     cl::desc("Prefer SCC1 branches for unsigned scalar guards"));
+
+static cl::opt<bool> ShrinkLateCompareMask(
+    "amdgpu-shrink-late-compare-mask", cl::Hidden, cl::init(false),
+    cl::desc("Use dead VCC for late compare and conditional mask pairs"));
 
 STATISTIC(NumModeWritesRemoved,
           "Number of redundant mode register writes removed");
@@ -57,6 +62,7 @@ private:
   MachineLoopInfo *MLI = nullptr;
 
   bool optimizeVccBranch(MachineInstr &MI) const;
+  bool optimizeCompareMask(MachineInstr &MI, const LiveRegUnits &Live) const;
   void updateMLIBeforeRemovingEdge(MachineBasicBlock *From,
                                    MachineBasicBlock *To) const;
   bool optimizeSetGPR(MachineInstr &First, MachineInstr &MI) const;
@@ -129,6 +135,71 @@ INITIALIZE_PASS(SIPreEmitPeepholeLegacy, DEBUG_TYPE,
 char SIPreEmitPeepholeLegacy::ID = 0;
 
 char &llvm::SIPreEmitPeepholeID = SIPreEmitPeepholeLegacy::ID;
+
+bool SIPreEmitPeephole::optimizeCompareMask(MachineInstr &MI,
+                                            const LiveRegUnits &Live) const {
+  if (MI.getOpcode() != AMDGPU::V_CNDMASK_B32_e64 || MI.isBundled())
+    return false;
+
+  MachineOperand *Mask = TII->getNamedOperand(MI, AMDGPU::OpName::src2);
+  if (!Mask->isReg() || !Mask->getReg().isPhysical() || Mask->getSubReg())
+    return false;
+  Register MaskReg = Mask->getReg();
+  Register VCC = TRI->getVCC();
+  if (MaskReg == VCC || MI.readsRegister(VCC, TRI))
+    return false;
+  if (!Live.available(MaskReg) || !Live.available(VCC))
+    return false;
+  for (const MachineOperand &MO : MI.operands())
+    if (&MO != Mask && MO.isReg() && MO.getReg() &&
+        TRI->regsOverlap(MO.getReg(), MaskReg))
+      return false;
+
+  MachineBasicBlock &MBB = *MI.getParent();
+  auto I = MI.getIterator();
+  SmallVector<MachineOperand *, 4> Anchors;
+  unsigned Remaining = 32;
+  while (I != MBB.begin() && Remaining--) {
+    --I;
+    if (I->isBundled() || I->isInlineAsm() || I->isTerminator() ||
+        I->modifiesRegister(AMDGPU::EXEC, TRI) || I->readsRegister(VCC, TRI) ||
+        I->modifiesRegister(VCC, TRI))
+      return false;
+    if (I->modifiesRegister(MaskReg, TRI))
+      break;
+    if (!I->readsRegister(MaskReg, TRI))
+      continue;
+    if (I->getOpcode() != TargetOpcode::FAKE_USE)
+      return false;
+    for (MachineOperand &MO : I->operands())
+      if (MO.isReg() && MO.getReg() && TRI->regsOverlap(MO.getReg(), MaskReg)) {
+        if (MO.getReg() != MaskReg || MO.getSubReg())
+          return false;
+        Anchors.push_back(&MO);
+      }
+  }
+  if (I == MI.getIterator() || !I->modifiesRegister(MaskReg, TRI) ||
+      !TII->hasVALU32BitEncoding(I->getOpcode()))
+    return false;
+  int Op32 = AMDGPU::getVOPe32(I->getOpcode());
+  MachineOperand *SDst = TII->getNamedOperand(*I, AMDGPU::OpName::sdst);
+  if (!TII->isVOPC(Op32) || !SDst || SDst->getReg() != MaskReg ||
+      SDst->getSubReg() || I->readsRegister(MaskReg, TRI) ||
+      !TII->canShrink(*I, MBB.getParent()->getRegInfo()) ||
+      I->getNumOperands() != I->getDesc().getNumOperands() +
+                                 I->getDesc().implicit_uses().size() +
+                                 I->getDesc().implicit_defs().size())
+    return false;
+
+  SDst->setReg(VCC);
+  for (MachineOperand *Anchor : Anchors)
+    Anchor->setReg(VCC);
+  Mask->setReg(VCC);
+  Mask->setIsKill(true);
+  TII->buildShrunkInst(*I, Op32);
+  I->eraseFromParent();
+  return true;
+}
 
 void SIPreEmitPeephole::updateMLIBeforeRemovingEdge(
     MachineBasicBlock *From, MachineBasicBlock *To) const {
@@ -864,6 +935,19 @@ bool SIPreEmitPeephole::run(MachineFunction &MF, MachineLoopInfo *LoopInfo) {
     for (MachineInstr &MI : make_early_inc_range(MBB.instrs()))
       if (MI.isInlineAsm())
         Changed |= TII->expandSingleOpInlineAsm(MI);
+
+  if (ShrinkLateCompareMask) {
+    for (MachineBasicBlock &MBB : MF) {
+      LiveRegUnits Live(*TRI);
+      Live.addLiveOuts(MBB);
+      for (MachineInstr &MI : reverse(MBB)) {
+        if (MI.isDebugInstr())
+          continue;
+        Changed |= optimizeCompareMask(MI, Live);
+        Live.stepBackward(MI);
+      }
+    }
+  }
 
   MF.RenumberBlocks();
 
