@@ -990,9 +990,11 @@ public:
       function_ref<std::optional<int>(const MachineInstr &)> WindowFor,
       int MaxWindow,
       GCNHazardRecognizer::GetNumWaitStatesFn GetNumWaitStates =
-          SIInstrInfo::getNumWaitStates)
+          SIInstrInfo::getNumWaitStates,
+      function_ref<std::optional<int>(const MachineInstr &)> WindowCapFor =
+          nullptr)
       : WindowFor(WindowFor), GetNumWaitStates(GetNumWaitStates),
-        MaxWindow(MaxWindow) {}
+        MaxWindow(MaxWindow), WindowCapFor(WindowCapFor) {}
 
   int run(const MachineInstr &MI);
 
@@ -1004,39 +1006,42 @@ private:
     const MachineBasicBlock *MBB;
     MachineBasicBlock::const_reverse_instr_iterator Start;
     int Distance;
+    int Cap;
   };
 
   void arrive(const MachineBasicBlock *MBB,
               MachineBasicBlock::const_reverse_instr_iterator Start,
-              int Distance);
+              int Distance, int Cap);
   void scan(Arrival A);
 
   const function_ref<std::optional<int>(const MachineInstr &)> WindowFor;
   const GCNHazardRecognizer::GetNumWaitStatesFn GetNumWaitStates;
   const int MaxWindow;
+  const function_ref<std::optional<int>(const MachineInstr &)> WindowCapFor;
   int Deficit = 0;
   // Pending[D] holds the arrivals at distance D, and Best the smallest distance
   // each block has been queued at. Buckets are emptied in increasing distance,
   // so the first arrival scanned at a block is the shortest way into it, and
   // any later one is stale.
   SmallVector<SmallVector<Arrival, 2>, 4> Pending;
-  DenseMap<const MachineBasicBlock *, int> Best;
+  DenseMap<std::pair<const MachineBasicBlock *, int>, int> Best;
 };
 
 } // end anonymous namespace
 
 void WindowDeficitSearch::arrive(
     const MachineBasicBlock *MBB,
-    MachineBasicBlock::const_reverse_instr_iterator Start, int Distance) {
+    MachineBasicBlock::const_reverse_instr_iterator Start, int Distance,
+    int Cap) {
   // No window exceeds MaxWindow, so nothing this far back can beat the deficit
   // already found.
-  if (MaxWindow - Distance <= Deficit)
+  if (std::min(MaxWindow - Distance, Cap) <= Deficit)
     return;
 
   if (Pending.empty())
     Pending.resize(MaxWindow);
 
-  auto [It, Inserted] = Best.try_emplace(MBB, Distance);
+  auto [It, Inserted] = Best.try_emplace(std::make_pair(MBB, Cap), Distance);
   if (!Inserted) {
     if (It->second <= Distance)
       return;
@@ -1044,25 +1049,32 @@ void WindowDeficitSearch::arrive(
   }
 
   assert(Distance < MaxWindow && "arrival outside the window");
-  Pending[Distance].push_back({MBB, Start, Distance});
+  Pending[Distance].push_back({MBB, Start, Distance, Cap});
 }
 
 // \p A is a copy because arrive() may append to the bucket it came from, which
 // can move that bucket's elements.
 void WindowDeficitSearch::scan(Arrival A) {
   // A shorter way into this block has been queued since.
-  if (Best.lookup(A.MBB) < A.Distance)
+  if (Best.lookup({A.MBB, A.Cap}) < A.Distance)
     return;
 
   int Distance = A.Distance;
+  int Cap = A.Cap;
   for (auto I = A.Start, E = A.MBB->instr_rend(); I != E; ++I) {
     if (I->isBundle())
       continue;
 
     if (std::optional<int> Window = WindowFor(*I)) {
       assert(*Window >= 0 && *Window <= MaxWindow && "window out of bounds");
-      Deficit = std::max(Deficit, *Window - Distance);
+      Deficit = std::max(Deficit, std::min(*Window - Distance, Cap));
     }
+
+    if (WindowCapFor)
+      if (std::optional<int> WindowCap = WindowCapFor(*I))
+        Cap = std::min(Cap, *WindowCap - Distance);
+    if (Cap <= Deficit)
+      return;
 
     Distance += getCountedWaitStates(*I, GetNumWaitStates);
 
@@ -1081,14 +1093,14 @@ void WindowDeficitSearch::scan(Arrival A) {
       Executed += getCountedWaitStates(*Start, GetNumWaitStates);
     }
 
-    arrive(Pred, Start, Distance + Executed);
+    arrive(Pred, Start, Distance + Executed, Cap);
   }
 }
 
 int WindowDeficitSearch::run(const MachineInstr &MI) {
   // Only the part above MI is scanned here, so the block stays out of Best: a
   // backedge into it must still scan it from its end.
-  scan({MI.getParent(), std::next(MI.getReverseIterator()), 0});
+  scan({MI.getParent(), std::next(MI.getReverseIterator()), 0, MaxWindow});
 
   // Distances never shrink along a path, so a scan only queues arrivals at the
   // distance being swept or further, and one pass over the buckets is enough.
@@ -1160,19 +1172,27 @@ getWaitStatesSince(GCNHazardRecognizer::IsHazardFn IsHazard,
 }
 
 int GCNHazardRecognizer::getMaxWindowDeficit(int MaxWindow,
-                                             WindowForFn WindowFor) const {
+                                             WindowForFn WindowFor,
+                                             WindowForFn WindowCapFor) const {
   if (isHazardRecognizerMode())
-    return WindowDeficitSearch(WindowFor, MaxWindow).run(*CurrCycleInstr);
+    return WindowDeficitSearch(WindowFor, MaxWindow,
+                               SIInstrInfo::getNumWaitStates, WindowCapFor)
+        .run(*CurrCycleInstr);
 
   // EmittedInstrs is capped and can be shorter than the widest window, which
   // costs scheduling quality only: the standalone pass still pads.
-  int Deficit = 0, Distance = 0;
+  int Deficit = 0, Distance = 0, Cap = MaxWindow;
   for (MachineInstr *MI : EmittedInstrs) {
     if (MI) {
       if (std::optional<int> Window = WindowFor(*MI)) {
         assert(*Window >= 0 && *Window <= MaxWindow && "window out of bounds");
-        Deficit = std::max(Deficit, *Window - Distance);
+        Deficit = std::max(Deficit, std::min(*Window - Distance, Cap));
       }
+      if (WindowCapFor)
+        if (std::optional<int> WindowCap = WindowCapFor(*MI))
+          Cap = std::min(Cap, *WindowCap - Distance);
+      if (Cap <= Deficit)
+        break;
     }
 
     Distance +=
@@ -3744,6 +3764,12 @@ int GCNHazardRecognizer::checkMAIVALUHazards(MachineInstr *MI) const {
 
   const MachineRegisterInfo &MRI = MF.getRegInfo();
 
+  auto XDLWindowCap = [&](const MachineInstr &I) -> std::optional<int> {
+    if (ST.hasGFX950Insts() && SIInstrInfo::isMFMA(I) && TII.isXDL(I))
+      return 4;
+    return std::nullopt;
+  };
+
   int WaitStatesNeeded = 0;
 
   bool IsMem = SIInstrInfo::isVMEM(*MI) || SIInstrInfo::isDS(*MI);
@@ -3894,8 +3920,21 @@ int GCNHazardRecognizer::checkMAIVALUHazards(MachineInstr *MI) const {
                               [&](const MachineInstr &P) -> std::optional<int> {
                                 if (!IsMFMAWriteFn(P))
                                   return std::nullopt;
+                                if (ST.hasGFX950Insts() && TII.isXDL(P))
+                                  return std::nullopt;
                                 return MFMAWindow(P);
                               }));
+      if (ST.hasGFX950Insts())
+        WaitStatesNeeded =
+            std::max(WaitStatesNeeded,
+                     getMaxWindowDeficit(
+                         MaxWaitStates,
+                         [&](const MachineInstr &P) -> std::optional<int> {
+                           if (!IsMFMAWriteFn(P) || !TII.isXDL(P))
+                             return std::nullopt;
+                           return MFMAWindow(P);
+                         },
+                         XDLWindowCap));
 
       if (WaitStatesNeeded >= MaxWaitStates)
         break;
