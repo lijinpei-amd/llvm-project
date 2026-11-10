@@ -4028,8 +4028,21 @@ int GCNHazardRecognizer::checkMAIVALUHazards(MachineInstr *MI) const {
                             [&](const MachineInstr &P) -> std::optional<int> {
                               if (!IsMFMAWriteFn(P))
                                 return std::nullopt;
+                              if (ST.hasGFX950Insts() && TII.isXDL(P))
+                                return std::nullopt;
                               return MFMAWawWindow(P);
                             }));
+    if (ST.hasGFX950Insts())
+      WaitStatesNeeded =
+          std::max(WaitStatesNeeded,
+                   getMaxWindowDeficit(
+                       MaxWaitStates,
+                       [&](const MachineInstr &P) -> std::optional<int> {
+                         if (!IsMFMAWriteFn(P) || !TII.isXDL(P))
+                           return std::nullopt;
+                         return MFMAWawWindow(P);
+                       },
+                       XDLWindowCap));
 
     if (WaitStatesNeeded >= MaxWaitStates)
       break;
