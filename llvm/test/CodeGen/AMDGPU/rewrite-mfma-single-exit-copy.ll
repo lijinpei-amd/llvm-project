@@ -474,8 +474,9 @@ define amdgpu_kernel void @single_exit_copy(
 ; CHECK-NEXT:    v_mfma_f32_16x16x32_f16 v[228:231], v[232:235], a[4:7], v[224:227]
 ; CHECK-NEXT:    .loc 1 30 1 ; test:30:1
 ; CHECK-NEXT:    v_mfma_f32_16x16x32_f16 v[224:227], a[4:7], v[232:235], v[224:227]
-; CHECK-NEXT:    s_nop 6
+; CHECK-NEXT:    s_nop 3
 ; CHECK-NEXT:    v_add_f32_e32 v228, 1.0, v228
+; CHECK-NEXT:    s_nop 2
 ; CHECK-NEXT:    v_add_f32_e32 v229, 2.0, v224
 ; CHECK-NEXT:    v_mov_b32_e32 v224, 0
 ; CHECK-NEXT:    global_store_dwordx2 v236, v[228:229], s[0:1]
