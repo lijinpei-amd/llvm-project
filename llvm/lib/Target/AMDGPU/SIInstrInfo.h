@@ -381,6 +381,7 @@ public:
       MachineInstr::MIFlag Flags = MachineInstr::NoFlags) const override;
 
   bool expandPostRAPseudo(MachineInstr &MI) const override;
+  bool expandSingleOpInlineAsm(MachineInstr &MI) const;
 
   void
   reMaterialize(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,

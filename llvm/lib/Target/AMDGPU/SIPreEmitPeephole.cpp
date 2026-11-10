@@ -855,6 +855,11 @@ bool SIPreEmitPeephole::run(MachineFunction &MF, MachineLoopInfo *LoopInfo) {
   MLI = LoopInfo;
   bool Changed = false;
 
+  for (MachineBasicBlock &MBB : MF)
+    for (MachineInstr &MI : make_early_inc_range(MBB.instrs()))
+      if (MI.isInlineAsm())
+        Changed |= TII->expandSingleOpInlineAsm(MI);
+
   MF.RenumberBlocks();
 
   for (MachineBasicBlock &MBB : MF) {

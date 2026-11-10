@@ -2095,6 +2095,91 @@ unsigned SIInstrInfo::getNumWaitStates(const MachineInstr &MI) {
   }
 }
 
+bool SIInstrInfo::expandSingleOpInlineAsm(MachineInstr &MI) const {
+  StringRef Asm = MI.getOperand(InlineAsm::MIOp_AsmString).getSymbolName();
+  bool Increment = Asm == "s_add_u32 $0, $1, 1";
+  bool CndMask = Asm == "v_cndmask_b32_e64 $0, $1, $2, $3";
+  unsigned Opcode;
+  if (Increment || Asm == "s_add_u32 $0, $1, $2")
+    Opcode = AMDGPU::S_ADD_U32;
+  else if (Asm == "s_min_u32 $0, $1, $2")
+    Opcode = AMDGPU::S_MIN_U32;
+  else if (CndMask)
+    Opcode = AMDGPU::V_CNDMASK_B32_e64;
+  else
+    return false;
+
+  unsigned ExtraInfo = MI.getOperand(InlineAsm::MIOp_ExtraInfo).getImm();
+  if (ExtraInfo &
+      ~(InlineAsm::Extra_HasSideEffects | InlineAsm::Extra_AsmDialect |
+        InlineAsm::Extra_IsConvergent))
+    return false;
+
+  SmallVector<const MachineOperand *, 4> Operands;
+  unsigned I = InlineAsm::MIOp_FirstOperand;
+  unsigned NumOperands = CndMask ? 4 : Increment ? 2 : 3;
+  for (unsigned N = 0; N != NumOperands; ++N) {
+    if (I + 1 >= MI.getNumOperands() || !MI.getOperand(I).isImm())
+      return false;
+    InlineAsm::Flag Flag(MI.getOperand(I).getImm());
+    if (Flag.getNumOperandRegisters() != 1 ||
+        (N == 0 ? !Flag.isRegDefKind() : !Flag.isRegUseKind()))
+      return false;
+    const MachineOperand &Op = MI.getOperand(I + 1);
+    if (!Op.isReg() || Op.getReg().isVirtual() || Op.getSubReg() ||
+        Op.isImplicit() || Op.isDef() != (N == 0))
+      return false;
+    const TargetRegisterClass &RC =
+        CndMask ? (N == 3 ? AMDGPU::SReg_64RegClass : AMDGPU::VGPR_32RegClass)
+                : AMDGPU::SReg_32RegClass;
+    if (!RC.contains(Op.getReg()))
+      return false;
+    Operands.push_back(&Op);
+    I += 2;
+  }
+
+  const MachineOperand *SCC = nullptr;
+  if (!CndMask) {
+    if (I + 1 >= MI.getNumOperands() || !MI.getOperand(I).isImm())
+      return false;
+    InlineAsm::Flag Flag(MI.getOperand(I).getImm());
+    const MachineOperand &Op = MI.getOperand(I + 1);
+    if (!Flag.isClobberKind() || Flag.getNumOperandRegisters() != 1 ||
+        !Op.isReg() || Op.getReg() != AMDGPU::SCC || !Op.isDef() ||
+        !Op.isImplicit())
+      return false;
+    SCC = &Op;
+    I += 2;
+  } else if (I < MI.getNumOperands() && MI.getOperand(I).isReg()) {
+    const MachineOperand &Op = MI.getOperand(I++);
+    if (!Op.isReg() || Op.getReg() != AMDGPU::EXEC || !Op.isUse() ||
+        !Op.isImplicit())
+      return false;
+  }
+  if (I < MI.getNumOperands() && MI.getOperand(I).isMetadata())
+    ++I;
+  if (I != MI.getNumOperands())
+    return false;
+
+  MachineInstrBuilder MIB =
+      BuildMI(*MI.getParent(), MI, MI.getDebugLoc(), get(Opcode));
+  MIB.add(*Operands[0]);
+  if (CndMask) {
+    MIB.addImm(0).add(*Operands[1]).addImm(0).add(*Operands[2]);
+    MIB.add(*Operands[3]);
+  } else {
+    MIB.add(*Operands[1]);
+    if (Increment)
+      MIB.addImm(1);
+    else
+      MIB.add(*Operands[2]);
+    if (SCC->isDead())
+      MIB->addRegisterDead(AMDGPU::SCC, &RI);
+  }
+  MI.eraseFromParent();
+  return true;
+}
+
 bool SIInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
   MachineBasicBlock &MBB = *MI.getParent();
   DebugLoc DL = MBB.findDebugLoc(MI);
