@@ -12,7 +12,6 @@ body: |
     ; CHECK: liveins: $sgpr1
     ; CHECK-NEXT: {{  $}}
     ; CHECK-NEXT: INLINEASM &"s_add_u32 $0, $1, 1", sideeffect attdialect, regdef:SReg_32, def $sgpr0, reguse:SReg_32, $sgpr1, clobber, implicit-def dead early-clobber $scc
-    ; CHECK-NEXT: S_NOP 0
     ; CHECK-NEXT: INLINEASM &"s_add_u32 $0, $1, 1", sideeffect attdialect, regdef:SReg_32, def $sgpr0, reguse:SReg_32, $sgpr0, clobber, implicit-def dead early-clobber $scc
     ; CHECK-NEXT: S_ENDPGM 0
     INLINEASM &"s_add_u32 $0, $1, 1", sideeffect attdialect, regdef:SReg_32, def $sgpr0, reguse:SReg_32, $sgpr1, clobber, implicit-def dead early-clobber $scc
@@ -29,7 +28,6 @@ body: |
     ; CHECK: liveins: $sgpr1, $vgpr1
     ; CHECK-NEXT: {{  $}}
     ; CHECK-NEXT: INLINEASM &"s_add_u32 $0, $1, 1", sideeffect attdialect, regdef:SReg_32, def $sgpr0, reguse:SReg_32, $sgpr1, clobber, implicit-def dead early-clobber $scc
-    ; CHECK-NEXT: S_NOP 0
     ; CHECK-NEXT: $vgpr0 = V_ADD_F32_e32 $sgpr0, $vgpr1, implicit $mode, implicit $exec
     ; CHECK-NEXT: S_ENDPGM 0
     INLINEASM &"s_add_u32 $0, $1, 1", sideeffect attdialect, regdef:SReg_32, def $sgpr0, reguse:SReg_32, $sgpr1, clobber, implicit-def dead early-clobber $scc
@@ -77,6 +75,7 @@ body: |
   bb.0:
     ; CHECK-LABEL: name: inlineasm_m0_sendmsg
     ; CHECK: INLINEASM &"s_mov_b32 m0, 1", sideeffect attdialect, clobber, implicit-def $m0
+    ; CHECK-NEXT: S_NOP 0
     ; CHECK-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; CHECK-NEXT: S_ENDPGM 0
     INLINEASM &"s_mov_b32 m0, 1", sideeffect attdialect, clobber, implicit-def $m0

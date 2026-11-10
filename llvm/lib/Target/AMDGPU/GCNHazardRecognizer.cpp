@@ -1740,7 +1740,8 @@ int GCNHazardRecognizer::checkVALUHazards(MachineInstr *VALU) const {
       if (ProducerMI.isInlineAsm()) {
         // Assume inline asm has dst forwarding hazard
         for (auto &Def : ProducerMI.all_defs()) {
-          if (consumesDstSelForwardingOperand(VALU, &Def, TRI))
+          if (TRI->isVectorRegister(MF.getRegInfo(), Def.getReg()) &&
+              consumesDstSelForwardingOperand(VALU, &Def, TRI))
             return true;
         }
       }
@@ -1870,8 +1871,9 @@ int GCNHazardRecognizer::checkInlineAsmHazards(MachineInstr *IA) const {
       if (ProducerMI.isInlineAsm()) {
         // If MI is inline asm, assume it has dst forwarding hazard
         for (auto &Def : ProducerMI.all_defs()) {
-          if (IA->modifiesRegister(Def.getReg(), &TRI) ||
-              IA->readsRegister(Def.getReg(), &TRI)) {
+          if (TRI.isVectorRegister(MF.getRegInfo(), Def.getReg()) &&
+              (IA->modifiesRegister(Def.getReg(), &TRI) ||
+               IA->readsRegister(Def.getReg(), &TRI))) {
             return true;
           }
         }
@@ -1929,7 +1931,9 @@ int GCNHazardRecognizer::checkRFEHazards(MachineInstr *RFE) const {
 int GCNHazardRecognizer::checkReadM0Hazards(MachineInstr *MI) const {
   const SIInstrInfo *TII = ST.getInstrInfo();
   const int ReadM0WaitStates = 1;
-  auto IsHazardFn = [TII](const MachineInstr &MI) { return TII->isSALU(MI); };
+  auto IsHazardFn = [TII](const MachineInstr &MI) {
+    return TII->isSALU(MI) || MI.isInlineAsm();
+  };
   return ReadM0WaitStates -
          getWaitStatesSinceDef(AMDGPU::M0, IsHazardFn, ReadM0WaitStates);
 }
