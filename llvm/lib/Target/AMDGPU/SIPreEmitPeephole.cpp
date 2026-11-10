@@ -40,6 +40,10 @@ static cl::opt<bool> ShrinkLateCompareMask(
     "amdgpu-shrink-late-compare-mask", cl::Hidden, cl::init(false),
     cl::desc("Use dead VCC for late compare and conditional mask pairs"));
 
+static cl::opt<bool> PreferUnsignedAdd(
+    "amdgpu-prefer-unsigned-add", cl::Hidden, cl::init(false),
+    cl::desc("Prefer unsigned scalar addition when SCC is dead"));
+
 STATISTIC(NumModeWritesRemoved,
           "Number of redundant mode register writes removed");
 
@@ -63,6 +67,7 @@ private:
 
   bool optimizeVccBranch(MachineInstr &MI) const;
   bool optimizeCompareMask(MachineInstr &MI, const LiveRegUnits &Live) const;
+  bool optimizeScalarAddition(MachineInstr &MI, const LiveRegUnits &Live) const;
   void updateMLIBeforeRemovingEdge(MachineBasicBlock *From,
                                    MachineBasicBlock *To) const;
   bool optimizeSetGPR(MachineInstr &First, MachineInstr &MI) const;
@@ -135,6 +140,17 @@ INITIALIZE_PASS(SIPreEmitPeepholeLegacy, DEBUG_TYPE,
 char SIPreEmitPeepholeLegacy::ID = 0;
 
 char &llvm::SIPreEmitPeepholeID = SIPreEmitPeepholeLegacy::ID;
+
+bool SIPreEmitPeephole::optimizeScalarAddition(MachineInstr &MI,
+                                               const LiveRegUnits &Live) const {
+  if (MI.isBundled() || !Live.available(AMDGPU::SCC) ||
+      MI.readsRegister(AMDGPU::SCC, TRI))
+    return false;
+  if (MI.getOpcode() != AMDGPU::S_ADD_I32)
+    return false;
+  MI.setDesc(TII->get(AMDGPU::S_ADD_U32));
+  return true;
+}
 
 bool SIPreEmitPeephole::optimizeCompareMask(MachineInstr &MI,
                                             const LiveRegUnits &Live) const {
@@ -936,14 +952,17 @@ bool SIPreEmitPeephole::run(MachineFunction &MF, MachineLoopInfo *LoopInfo) {
       if (MI.isInlineAsm())
         Changed |= TII->expandSingleOpInlineAsm(MI);
 
-  if (ShrinkLateCompareMask) {
+  if (ShrinkLateCompareMask || PreferUnsignedAdd) {
     for (MachineBasicBlock &MBB : MF) {
       LiveRegUnits Live(*TRI);
       Live.addLiveOuts(MBB);
       for (MachineInstr &MI : reverse(MBB)) {
         if (MI.isDebugInstr())
           continue;
-        Changed |= optimizeCompareMask(MI, Live);
+        if (ShrinkLateCompareMask)
+          Changed |= optimizeCompareMask(MI, Live);
+        if (PreferUnsignedAdd)
+          Changed |= optimizeScalarAddition(MI, Live);
         Live.stepBackward(MI);
       }
     }
