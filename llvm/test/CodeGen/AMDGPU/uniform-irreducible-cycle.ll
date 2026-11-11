@@ -750,13 +750,11 @@ define amdgpu_kernel void @nested_mixed(i1 %p1, i1 %p2, i1 %p3, i1 %p4, i1 %p5) 
 ; DEFAULT-NEXT:  .LBB5_7: ; %B1
 ; DEFAULT-NEXT:    ; in Loop: Header=BB5_8 Depth=2
 ; DEFAULT-NEXT:    s_bitcmp1_b32 s0, 8
-; DEFAULT-NEXT:    s_cselect_b64 s[10:11], -1, 0
 ; DEFAULT-NEXT:    s_mov_b64 s[8:9], -1
-; DEFAULT-NEXT:    s_and_b64 vcc, exec, s[10:11]
 ; DEFAULT-NEXT:    ;;#ASMSTART
 ; DEFAULT-NEXT:    s_nop 1
 ; DEFAULT-NEXT:    ;;#ASMEND
-; DEFAULT-NEXT:    s_cbranch_vccz .LBB5_1
+; DEFAULT-NEXT:    s_cbranch_scc0 .LBB5_1
 ; DEFAULT-NEXT:  .LBB5_8: ; %irr.guard5
 ; DEFAULT-NEXT:    ; Parent Loop BB5_3 Depth=1
 ; DEFAULT-NEXT:    ; => This Inner Loop Header: Depth=2
@@ -765,12 +763,10 @@ define amdgpu_kernel void @nested_mixed(i1 %p1, i1 %p2, i1 %p3, i1 %p4, i1 %p5) 
 ; DEFAULT-NEXT:  ; %bb.9: ; %B2
 ; DEFAULT-NEXT:    ; in Loop: Header=BB5_8 Depth=2
 ; DEFAULT-NEXT:    s_bitcmp1_b32 s0, 16
-; DEFAULT-NEXT:    s_cselect_b64 s[8:9], -1, 0
-; DEFAULT-NEXT:    s_and_b64 vcc, exec, s[8:9]
 ; DEFAULT-NEXT:    ;;#ASMSTART
 ; DEFAULT-NEXT:    s_nop 2
 ; DEFAULT-NEXT:    ;;#ASMEND
-; DEFAULT-NEXT:    s_cbranch_vccnz .LBB5_7
+; DEFAULT-NEXT:    s_cbranch_scc1 .LBB5_7
 ; DEFAULT-NEXT:    s_branch .LBB5_1
 ; DEFAULT-NEXT:  .LBB5_10: ; %exit
 ; DEFAULT-NEXT:    s_endpgm
@@ -834,13 +830,11 @@ define amdgpu_kernel void @nested_mixed(i1 %p1, i1 %p2, i1 %p3, i1 %p4, i1 %p5) 
 ; PRESERVE-NEXT:  .LBB5_7: ; %B1
 ; PRESERVE-NEXT:    ; in Loop: Header=BB5_8 Depth=2
 ; PRESERVE-NEXT:    s_bitcmp1_b32 s0, 8
-; PRESERVE-NEXT:    s_cselect_b64 s[10:11], -1, 0
 ; PRESERVE-NEXT:    s_mov_b64 s[8:9], -1
-; PRESERVE-NEXT:    s_and_b64 vcc, exec, s[10:11]
 ; PRESERVE-NEXT:    ;;#ASMSTART
 ; PRESERVE-NEXT:    s_nop 1
 ; PRESERVE-NEXT:    ;;#ASMEND
-; PRESERVE-NEXT:    s_cbranch_vccz .LBB5_1
+; PRESERVE-NEXT:    s_cbranch_scc0 .LBB5_1
 ; PRESERVE-NEXT:  .LBB5_8: ; %irr.guard5
 ; PRESERVE-NEXT:    ; Parent Loop BB5_3 Depth=1
 ; PRESERVE-NEXT:    ; => This Inner Loop Header: Depth=2
@@ -849,12 +843,10 @@ define amdgpu_kernel void @nested_mixed(i1 %p1, i1 %p2, i1 %p3, i1 %p4, i1 %p5) 
 ; PRESERVE-NEXT:  ; %bb.9: ; %B2
 ; PRESERVE-NEXT:    ; in Loop: Header=BB5_8 Depth=2
 ; PRESERVE-NEXT:    s_bitcmp1_b32 s0, 16
-; PRESERVE-NEXT:    s_cselect_b64 s[8:9], -1, 0
-; PRESERVE-NEXT:    s_and_b64 vcc, exec, s[8:9]
 ; PRESERVE-NEXT:    ;;#ASMSTART
 ; PRESERVE-NEXT:    s_nop 2
 ; PRESERVE-NEXT:    ;;#ASMEND
-; PRESERVE-NEXT:    s_cbranch_vccnz .LBB5_7
+; PRESERVE-NEXT:    s_cbranch_scc1 .LBB5_7
 ; PRESERVE-NEXT:    s_branch .LBB5_1
 ; PRESERVE-NEXT:  .LBB5_10: ; %exit
 ; PRESERVE-NEXT:    s_endpgm
