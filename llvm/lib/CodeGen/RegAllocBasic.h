@@ -24,20 +24,17 @@
 
 namespace llvm {
 
-struct CompSpillWeight {
+struct CompIntervalStart {
   bool operator()(const LiveInterval *A, const LiveInterval *B) const {
-    // Compare by weight first, then use register number as a stable tie-breaker
-    // to ensure deterministic ordering when the weights are equal.
-    return std::tuple(A->weight(), A->reg()) <
-           std::tuple(B->weight(), B->reg());
+    // Diagnostic start-order queue.
+    if (A->empty() || B->empty())
+      return !A->empty() && B->empty();
+    return std::tuple(A->beginIndex(), A->reg()) >
+           std::tuple(B->beginIndex(), B->reg());
   }
 };
 
-/// RABasic provides a minimal implementation of the basic register allocation
-/// algorithm. It prioritizes live virtual registers by spill weight and spills
-/// whenever a register is unavailable. This is not practical in production but
-/// provides a useful baseline both for measuring other allocators and comparing
-/// the speed of the basic algorithm against other styles of allocators.
+/// RABasic provides diagnostic start-order register allocation.
 class LLVM_LIBRARY_VISIBILITY RABasic : public MachineFunctionPass,
                                         public RegAllocBase,
                                         private LiveRangeEdit::Delegate {
@@ -47,7 +44,7 @@ class LLVM_LIBRARY_VISIBILITY RABasic : public MachineFunctionPass,
   // state
   std::unique_ptr<Spiller> SpillerInstance;
   std::priority_queue<const LiveInterval *, std::vector<const LiveInterval *>,
-                      CompSpillWeight>
+                      CompIntervalStart>
       Queue;
 
   bool LRE_CanEraseVirtReg(Register) override;

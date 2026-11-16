@@ -29,6 +29,7 @@
 #include "llvm/CodeGen/RegisterClassInfo.h"
 #include "llvm/CodeGen/VirtRegMap.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -38,6 +39,10 @@ using namespace llvm;
 
 static RegisterRegAlloc basicRegAlloc("basic", "basic register allocator",
                                       createBasicRegisterAllocator);
+
+static cl::opt<unsigned>
+    DiagnosticRegisterOrder("diagnostic-linear-scan-register-order",
+                            cl::init(0), cl::Hidden);
 
 char RABasic::ID = 0;
 
@@ -158,26 +163,27 @@ bool RABasic::spillInterferences(const LiveInterval &VirtReg,
   return true;
 }
 
-// Driver for the register assignment and splitting heuristics.
-// Manages iteration over the LiveIntervalUnions.
-//
-// This is a minimal implementation of register assignment and splitting that
-// spills whenever we run out of registers.
-//
-// selectOrSplit can only be called once per live virtual register. We then do a
-// single interference test for each register the correct class until we find an
-// available register. So, the number of interference tests in the worst case is
-// |vregs| * |machineregs|. And since the number of interference tests is
-// minimal, there is no value in caching them outside the scope of
-// selectOrSplit().
 MCRegister RABasic::selectOrSplit(const LiveInterval &VirtReg,
                                   SmallVectorImpl<Register> &SplitVRegs) {
   // Populate a list of physical register spill candidates.
   SmallVector<MCRegister, 8> PhysRegSpillCands;
 
-  // Check for an available register in this class.
-  auto Order =
-      AllocationOrder::create(VirtReg.reg(), *VRM, *RegClassInfo, Matrix);
+  SmallVector<MCRegister, 256> Order;
+  for (MCRegister PhysReg :
+       AllocationOrder::create(VirtReg.reg(), *VRM, *RegClassInfo, Matrix))
+    Order.push_back(PhysReg);
+  bool Scalar =
+      TRI->getRegSizeInBits(*MRI->getRegClass(VirtReg.reg())).getFixedValue() ==
+      32;
+  bool Descending = DiagnosticRegisterOrder == 3 ||
+                    (DiagnosticRegisterOrder == 1 && Scalar) ||
+                    (DiagnosticRegisterOrder == 2 && !Scalar);
+  llvm::sort(Order, [&](MCRegister A, MCRegister B) {
+    auto Left = std::make_tuple(TRI->getEncodingValue(A), A);
+    auto Right = std::make_tuple(TRI->getEncodingValue(B), B);
+    return Descending ? Left > Right : Left < Right;
+  });
+
   for (MCRegister PhysReg : Order) {
     assert(PhysReg.isValid());
     // Check for interference in PhysReg
