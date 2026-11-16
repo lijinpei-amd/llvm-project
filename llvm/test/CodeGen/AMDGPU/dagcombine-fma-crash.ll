@@ -36,10 +36,7 @@ define void @main(float %arg) {
   ; CHECK-NEXT:   [[S_CSELECT_B32_:%[0-9]+]]:sreg_32 = S_CSELECT_B32 1, 0, implicit $scc
   ; CHECK-NEXT:   [[S_MOV_B32_3:%[0-9]+]]:sreg_32 = S_MOV_B32 1
   ; CHECK-NEXT:   S_CMP_LG_U32 [[S_CSELECT_B32_]], [[S_MOV_B32_3]], implicit-def $scc
-  ; CHECK-NEXT:   [[COPY2:%[0-9]+]]:sreg_32 = COPY $scc
-  ; CHECK-NEXT:   [[S_AND_B32_1:%[0-9]+]]:sreg_32 = S_AND_B32 $exec_lo, [[COPY2]], implicit-def dead $scc
-  ; CHECK-NEXT:   $vcc_lo = COPY [[S_AND_B32_1]]
-  ; CHECK-NEXT:   S_CBRANCH_VCCNZ %bb.4, implicit $vcc
+  ; CHECK-NEXT:   S_CBRANCH_SCC1 %bb.4, implicit $scc
   ; CHECK-NEXT:   S_BRANCH %bb.3
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.3.bb15:

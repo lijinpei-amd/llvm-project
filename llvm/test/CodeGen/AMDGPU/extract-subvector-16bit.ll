@@ -1253,8 +1253,7 @@ define amdgpu_gfx <8 x i16> @vec_16xi16_extract_8xi16_0(i1 inreg %cond, ptr addr
 ; SI-NEXT:    s_waitcnt vmcnt(0)
 ; SI-NEXT:    v_and_b32_e32 v4, 1, v4
 ; SI-NEXT:    v_cmp_eq_u32_e32 vcc, 0, v4
-; SI-NEXT:    s_and_b64 s[34:35], vcc, exec
-; SI-NEXT:    s_cbranch_scc1 .LBB7_2
+; SI-NEXT:    s_cbranch_vccnz .LBB7_2
 ; SI-NEXT:  ; %bb.1: ; %T
 ; SI-NEXT:    buffer_load_ushort v2, v[0:1], s[36:39], 0 addr64 glc
 ; SI-NEXT:    s_waitcnt vmcnt(0)
@@ -1381,8 +1380,7 @@ define amdgpu_gfx <8 x i16> @vec_16xi16_extract_8xi16_0(i1 inreg %cond, ptr addr
 ; GFX9-NEXT:    s_waitcnt vmcnt(0)
 ; GFX9-NEXT:    v_and_b32_e32 v4, 1, v4
 ; GFX9-NEXT:    v_cmp_eq_u32_e32 vcc, 0, v4
-; GFX9-NEXT:    s_cmp_lg_u64 vcc, 0
-; GFX9-NEXT:    s_cbranch_scc1 .LBB7_2
+; GFX9-NEXT:    s_cbranch_vccnz .LBB7_2
 ; GFX9-NEXT:  ; %bb.1: ; %T
 ; GFX9-NEXT:    global_load_dwordx4 v[2:5], v[0:1], off offset:16 glc
 ; GFX9-NEXT:    s_waitcnt vmcnt(0)
@@ -1432,8 +1430,7 @@ define amdgpu_gfx <8 x i16> @vec_16xi16_extract_8xi16_0(i1 inreg %cond, ptr addr
 ; GFX11-TRUE16-NEXT:    v_and_b32_e32 v4, 1, v4
 ; GFX11-TRUE16-NEXT:    s_delay_alu instid0(VALU_DEP_1)
 ; GFX11-TRUE16-NEXT:    v_cmp_eq_u32_e32 vcc_lo, 0, v4
-; GFX11-TRUE16-NEXT:    s_cmp_lg_u32 vcc_lo, 0
-; GFX11-TRUE16-NEXT:    s_cbranch_scc1 .LBB7_2
+; GFX11-TRUE16-NEXT:    s_cbranch_vccnz .LBB7_2
 ; GFX11-TRUE16-NEXT:  ; %bb.1: ; %T
 ; GFX11-TRUE16-NEXT:    global_load_b128 v[2:5], v[0:1], off offset:16 glc dlc
 ; GFX11-TRUE16-NEXT:    s_waitcnt vmcnt(0)
@@ -1474,8 +1471,7 @@ define amdgpu_gfx <8 x i16> @vec_16xi16_extract_8xi16_0(i1 inreg %cond, ptr addr
 ; GFX11-FAKE16-NEXT:    v_and_b32_e32 v4, 1, v4
 ; GFX11-FAKE16-NEXT:    s_delay_alu instid0(VALU_DEP_1)
 ; GFX11-FAKE16-NEXT:    v_cmp_eq_u32_e32 vcc_lo, 0, v4
-; GFX11-FAKE16-NEXT:    s_cmp_lg_u32 vcc_lo, 0
-; GFX11-FAKE16-NEXT:    s_cbranch_scc1 .LBB7_2
+; GFX11-FAKE16-NEXT:    s_cbranch_vccnz .LBB7_2
 ; GFX11-FAKE16-NEXT:  ; %bb.1: ; %T
 ; GFX11-FAKE16-NEXT:    global_load_b128 v[2:5], v[0:1], off offset:16 glc dlc
 ; GFX11-FAKE16-NEXT:    s_waitcnt vmcnt(0)
@@ -1548,8 +1544,7 @@ define amdgpu_gfx <8 x half> @vec_16xf16_extract_8xf16_0(i1 inreg %cond, ptr add
 ; SI-NEXT:    s_waitcnt vmcnt(0)
 ; SI-NEXT:    v_and_b32_e32 v4, 1, v4
 ; SI-NEXT:    v_cmp_eq_u32_e32 vcc, 0, v4
-; SI-NEXT:    s_and_b64 s[34:35], vcc, exec
-; SI-NEXT:    s_cbranch_scc1 .LBB8_2
+; SI-NEXT:    s_cbranch_vccnz .LBB8_2
 ; SI-NEXT:  ; %bb.1: ; %T
 ; SI-NEXT:    buffer_load_ushort v3, v[0:1], s[36:39], 0 addr64 glc
 ; SI-NEXT:    s_waitcnt vmcnt(0)
@@ -1675,8 +1670,7 @@ define amdgpu_gfx <8 x half> @vec_16xf16_extract_8xf16_0(i1 inreg %cond, ptr add
 ; GFX9-NEXT:    s_waitcnt vmcnt(0)
 ; GFX9-NEXT:    v_and_b32_e32 v4, 1, v4
 ; GFX9-NEXT:    v_cmp_eq_u32_e32 vcc, 0, v4
-; GFX9-NEXT:    s_cmp_lg_u64 vcc, 0
-; GFX9-NEXT:    s_cbranch_scc1 .LBB8_2
+; GFX9-NEXT:    s_cbranch_vccnz .LBB8_2
 ; GFX9-NEXT:  ; %bb.1: ; %T
 ; GFX9-NEXT:    global_load_dwordx4 v[2:5], v[0:1], off offset:16 glc
 ; GFX9-NEXT:    s_waitcnt vmcnt(0)
@@ -1724,8 +1718,7 @@ define amdgpu_gfx <8 x half> @vec_16xf16_extract_8xf16_0(i1 inreg %cond, ptr add
 ; GFX11-TRUE16-NEXT:    v_and_b32_e32 v4, 1, v4
 ; GFX11-TRUE16-NEXT:    s_delay_alu instid0(VALU_DEP_1)
 ; GFX11-TRUE16-NEXT:    v_cmp_eq_u32_e32 vcc_lo, 0, v4
-; GFX11-TRUE16-NEXT:    s_cmp_lg_u32 vcc_lo, 0
-; GFX11-TRUE16-NEXT:    s_cbranch_scc1 .LBB8_2
+; GFX11-TRUE16-NEXT:    s_cbranch_vccnz .LBB8_2
 ; GFX11-TRUE16-NEXT:  ; %bb.1: ; %T
 ; GFX11-TRUE16-NEXT:    global_load_b128 v[2:5], v[0:1], off offset:16 glc dlc
 ; GFX11-TRUE16-NEXT:    s_waitcnt vmcnt(0)
@@ -1766,8 +1759,7 @@ define amdgpu_gfx <8 x half> @vec_16xf16_extract_8xf16_0(i1 inreg %cond, ptr add
 ; GFX11-FAKE16-NEXT:    v_and_b32_e32 v4, 1, v4
 ; GFX11-FAKE16-NEXT:    s_delay_alu instid0(VALU_DEP_1)
 ; GFX11-FAKE16-NEXT:    v_cmp_eq_u32_e32 vcc_lo, 0, v4
-; GFX11-FAKE16-NEXT:    s_cmp_lg_u32 vcc_lo, 0
-; GFX11-FAKE16-NEXT:    s_cbranch_scc1 .LBB8_2
+; GFX11-FAKE16-NEXT:    s_cbranch_vccnz .LBB8_2
 ; GFX11-FAKE16-NEXT:  ; %bb.1: ; %T
 ; GFX11-FAKE16-NEXT:    global_load_b128 v[2:5], v[0:1], off offset:16 glc dlc
 ; GFX11-FAKE16-NEXT:    s_waitcnt vmcnt(0)

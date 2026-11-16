@@ -968,13 +968,6 @@ bool AMDGPUDAGToDAGISel::isSDWAOperand(const SDNode *N) const {
   return false;
 }
 
-bool AMDGPUDAGToDAGISel::isUniformBr(const SDNode *N) const {
-  const BasicBlock *BB = FuncInfo->MBB->getBasicBlock();
-  const Instruction *Term = BB->getTerminator();
-  return Term->getMetadata("amdgpu.uniform") ||
-         Term->getMetadata("structurizecfg.uniform");
-}
-
 bool AMDGPUDAGToDAGISel::isUnneededShiftMask(const SDNode *N,
                                              unsigned ShAmtBits) const {
   assert(N->getOpcode() == ISD::AND);
@@ -2978,7 +2971,7 @@ void AMDGPUDAGToDAGISel::SelectBRCOND(SDNode *N) {
 
   const SIRegisterInfo *TRI = Subtarget->getRegisterInfo();
 
-  bool UseSCCBr = isCBranchSCC(N) && isUniformBr(N);
+  bool UseSCCBr = isCBranchSCC(N) && !Cond->isDivergent();
   bool AndExec = !UseSCCBr;
   bool Negate = false;
 
