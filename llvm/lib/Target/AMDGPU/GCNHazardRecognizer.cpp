@@ -317,7 +317,7 @@ unsigned GCNHazardRecognizer::checkTRANSHazard(const MachineInstr &MI) const {
 
   if (SIInstrInfo::isVALU(MI, /*AllowLDSDMA=*/true) &&
       !SIInstrInfo::isWMMA(MI) && !SIInstrInfo::isSWMMAC(MI) &&
-      TII.getRepeatRate(MI) > 1)
+      !SIInstrInfo::isMFMA(MI) && TII.getRepeatRate(MI) > 1)
     return CyclesUntilTRANS;
 
   return 0;
@@ -392,7 +392,7 @@ GCNHazardRecognizer::checkMultiShadowHazard(const MachineInstr &MI) const {
     return 0;
 
   if (!SIInstrInfo::isVALU(MI, /*AllowLDSDMA=*/true) ||
-      SIInstrInfo::isLDSDMA(MI))
+      SIInstrInfo::isLDSDMA(MI) || SIInstrInfo::isMFMA(MI))
     return 0;
 
   // We have a VALU instruction that is under both a TRANS and WMMA shadow.
