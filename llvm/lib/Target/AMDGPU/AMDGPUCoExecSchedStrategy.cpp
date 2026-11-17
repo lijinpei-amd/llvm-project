@@ -127,7 +127,10 @@ llvm::AMDGPU::CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
     Res.Occupancy = 4;
     Res.LastIStage = 3;
     allowCoExec(Res, CoExecMask::SALU, 1);
-    allowCoExec(Res, CoExecMask::DS | CoExecMask::VALU | CoExecMask::VMEM, 2);
+    allowCoExec(Res,
+                CoExecMask::DS | CoExecMask::VALU | CoExecMask::TRANS |
+                    CoExecMask::VMEM,
+                2);
     allowCoExec(Res, CoExecMask::WMMA, 4);
     return Res;
 
@@ -177,7 +180,7 @@ llvm::AMDGPU::CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
     Res.LastIStage = 7;
     allowCoExec(Res, CoExecMask::SALU, 1);
     allowCoExec(Res, CoExecMask::DS | CoExecMask::VMEM, 2);
-    allowCoExec(Res, CoExecMask::VALU, 3);
+    allowCoExec(Res, CoExecMask::VALU | CoExecMask::TRANS, 3);
     allowCoExec(Res, CoExecMask::WMMA, 8);
     return Res;
 
@@ -252,7 +255,10 @@ llvm::AMDGPU::CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
     Res.Occupancy = 4;
     Res.LastIStage = 3;
     allowCoExec(Res, CoExecMask::SALU, 1);
-    allowCoExec(Res, CoExecMask::DS | CoExecMask::VALU | CoExecMask::VMEM, 2);
+    allowCoExec(Res,
+                CoExecMask::DS | CoExecMask::VALU | CoExecMask::TRANS |
+                    CoExecMask::VMEM,
+                2);
     allowCoExec(Res, CoExecMask::WMMA, 4);
     return Res;
 
@@ -322,7 +328,7 @@ llvm::AMDGPU::CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
     Res.LastIStage = 15;
     allowCoExec(Res, CoExecMask::SALU, 1);
     allowCoExec(Res, CoExecMask::DS | CoExecMask::VMEM, 2);
-    allowCoExec(Res, CoExecMask::VALU, 3);
+    allowCoExec(Res, CoExecMask::VALU | CoExecMask::TRANS, 3);
     allowCoExec(Res, CoExecMask::WMMA, 16);
     return Res;
 
@@ -345,7 +351,10 @@ llvm::AMDGPU::CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
     Res.Occupancy = 9;
     Res.LastIStage = 8;
     allowCoExec(Res, CoExecMask::SALU, 1);
-    allowCoExec(Res, CoExecMask::DS | CoExecMask::VALU | CoExecMask::VMEM, 4);
+    allowCoExec(Res,
+                CoExecMask::DS | CoExecMask::VALU | CoExecMask::TRANS |
+                    CoExecMask::VMEM,
+                4);
     allowCoExec(Res, CoExecMask::WMMA, 9);
     return Res;
 
@@ -358,7 +367,8 @@ llvm::AMDGPU::CoExecInfo llvm::AMDGPU::getMFMACoExecInfo(unsigned Opcode) {
     Res.Occupancy = 18;
     Res.LastIStage = 18;
     allowCoExec(Res, CoExecMask::DS | CoExecMask::SALU | CoExecMask::VMEM, 0);
-    allowCoExec(Res, CoExecMask::WMMA | CoExecMask::VALU, 18);
+    allowCoExec(Res, CoExecMask::WMMA | CoExecMask::VALU | CoExecMask::TRANS,
+                18);
     return Res;
 
   default:
