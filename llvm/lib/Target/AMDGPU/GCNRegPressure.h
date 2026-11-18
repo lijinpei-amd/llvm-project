@@ -191,6 +191,13 @@ inline GCNRegPressure max(const GCNRegPressure &P1, const GCNRegPressure &P2) {
   GCNRegPressure Res;
   for (unsigned I = 0; I < GCNRegPressure::ValueArraySize; ++I)
     Res.Value[I] = std::max(P1.Value[I], P2.Value[I]);
+  // AVGPRs are counted as ArchVGPRs, so keep the maximum of their sum.
+  for (unsigned Base : {0u, unsigned(GCNRegPressure::TOTAL_KINDS)}) {
+    unsigned V = Base + GCNRegPressure::VGPR, AV = Base + GCNRegPressure::AVGPR;
+    Res.Value[AV] =
+        std::max(P1.Value[V] + P1.Value[AV], P2.Value[V] + P2.Value[AV]) -
+        Res.Value[V];
+  }
   return Res;
 }
 
